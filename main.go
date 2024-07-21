@@ -212,6 +212,7 @@ curl -X POST https://rpcapi.fantom.network \
 	],
 	"id": 1
 }'
+{"jsonrpc":"2.0","id":1,"result":"0x000000000000000000000000000000000000000000000000000000135d10239b00000000000000000000000000000000000000000000049e145dd82cd75b9d5500000000000000000000000000000000000000000000000000000000669e4462"}
 ## 批量 rpc 请求
 ```python
 import requests
@@ -246,10 +247,7 @@ func queryReserves(pairAbi *abi.ABI, client *rpc.Client) {
 	if !exists {
 		log.Fatal("pairAbi.Methods")
 	}
-	// method.Sig
-	// methodIdSignature1 := "0x" + hex.EncodeToString(crypto.Keccak256([]byte(method.Sig))[:4])
 	methodIdSignature := hexutil.Encode(hexutil.Bytes(method.ID))
-	// methodIdSignature := method.ID
 	log.Println("method.Sig", method.Sig, "methodIdSignature", methodIdSignature, "method.ID")
 
 	batch := make([]rpc.BatchElem, len(pairAddresses))
@@ -259,21 +257,18 @@ func queryReserves(pairAbi *abi.ABI, client *rpc.Client) {
 		batch[i] = rpc.BatchElem{
 			Method: "eth_call",
 			Args: []interface{}{
-				/*
-					ethereum.CallMsg{
-						To: (*common.Address)(addr.Bytes()),
-						Data:          method.ID,
-					},
-				*/
+				/*ethereum.CallMsg{
+					To: (*common.Address)(addr.Bytes()),
+					Data:          method.ID,
+				},*/
 				map[string]string{
-					// "to": addr.Hex(),
-					// "data": methodIdSignature,
-					"to":   "0xaC97153e7ce86fB3e61681b969698AF7C22b4B12",
-					"data": "0x0902f1ac",
+					"to": addr.Hex(),
+					"data": methodIdSignature,
 				},
 				"latest",
 			},
-			Result: new([]byte),
+			// You are using []byte for the Result, but it’s often safer to use a hexutil.Bytes type or directly handle it as string to avoid encoding issues
+			Result: new(hexutil.Bytes),
 			// Result: &responses[i],
 		}
 	}
@@ -284,14 +279,15 @@ func queryReserves(pairAbi *abi.ABI, client *rpc.Client) {
 	// Process the results
 	for i, elem := range batch {
 		pairAddress := pairAddresses[i]
+		// res := elem.Result.(*string)
+		// log.Printf("%s\n", *res)
 		if elem.Error != nil {
-			log.Printf("%v+\n", batch)
-			log.Fatalf("Error fetching reserves for pair %s: %v, elem=%v+", pairAddress, elem.Error, elem)
+			log.Fatalf("Error fetching reserves for pair %s: %v", pairAddress, elem.Error, )
 			continue
 		}
 
 		// Unpack the result
-		reserveData := (*elem.Result.(*[]byte))
+		reserveData := (*elem.Result.(*hexutil.Bytes))
 		outputs, err := pairAbi.Unpack("getReserves", reserveData)
 		if err != nil {
 			log.Fatalf("Failed to unpack reserves data for pair %s: %v", pairAddress, err)
