@@ -20,18 +20,16 @@ import (
 var pairAbiStr string
 
 const (
-	nodeURL      = "https://rpcapi.fantom.network"
-	wsNodeURL    = "wss://wsapi.fantom.network/"
-	syncEventStr = "Sync"
-	swapEventStr = "Swap"
+	nodeURL   = "https://rpcapi.fantom.network"
+	wsNodeURL = "wss://wsapi.fantom.network/"
 )
 
 type Pair struct {
-	addr       common.Address
-	token0Addr common.Address
-	token1Addr common.Address
-	// e.g. 1e18
-	decimalsMul0 *big.Int
+	addr         common.Address
+	name         string // 只是用于日志打印
+	token0Addr   common.Address
+	token1Addr   common.Address
+	decimalsMul0 *big.Int // e.g. 1e18
 	decimalsMul1 *big.Int
 	reserve      Reserves
 	// e.g. quote_coin/token1 is USDC so price is reserve0/reserve1, Vice versa
@@ -103,10 +101,20 @@ func (pair *Pair) priceFloat() float64 {
 }
 
 type Reserves struct {
-	Reserve0           *big.Int
-	Reserve1           *big.Int
+	Reserve0 *big.Int
+	Reserve1 *big.Int
+	// sync event 里面没有 BlockTimestampLast 字段
+	// 但是这个字段也必须定义否则会报错 abi: field _blockTimestampLast can't be found in the given value
 	BlockTimestampLast uint32
 }
+type SyncEvent struct {
+	Reserve0 *big.Int
+	Reserve1 *big.Int
+}
+
+// func (b *Reserves) DecodeRLP(s *rlp.Stream) error {
+// 	panic("haha")
+// }
 
 var pairAddresses = []common.Address{
 	common.HexToAddress("0xaC97153e7ce86fB3e61681b969698AF7C22b4B12"),
@@ -130,36 +138,36 @@ factory: 0xC831A5cBfb4aC2Da5ed5B194385DFD9bF5bFcBa7
 var weiPerEther = new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)
 var usdcDecimalMul = new(big.Int).Exp(big.NewInt(10), big.NewInt(6), nil)
 var pairs = map[common.Address]*Pair{
-	// USDC/WFTM
 	common.HexToAddress("0xaC97153e7ce86fB3e61681b969698AF7C22b4B12"): {
 		addr:              common.HexToAddress("0xaC97153e7ce86fB3e61681b969698AF7C22b4B12"),
+		name:              "USDC/WFTM",
 		token0Addr:        common.HexToAddress("0x04068DA6C83AFCFA0e13ba15A6696662335D5B75"),
 		token1Addr:        common.HexToAddress("0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83"),
 		decimalsMul0:      usdcDecimalMul,
 		decimalsMul1:      weiPerEther,
 		quoteIsStableCoin: false,
 	},
-	// axlUSDC/WFTM
 	common.HexToAddress("0x084F933B6401a72291246B5B5eD46218a68773e6"): {
 		addr:              common.HexToAddress("0x084F933B6401a72291246B5B5eD46218a68773e6"),
+		name:              "axlUSDC/WFTM",
 		token0Addr:        common.HexToAddress("0x1B6382DBDEa11d97f24495C9A90b7c88469134a4"),
 		token1Addr:        common.HexToAddress("0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83"),
 		decimalsMul0:      usdcDecimalMul,
 		decimalsMul1:      weiPerEther,
 		quoteIsStableCoin: false,
 	},
-	// WFTM/USDC(stargate)
 	common.HexToAddress("0x8dD580271D823CBDC4a1C6153f69Dad594C521Fd"): {
 		addr:              common.HexToAddress("0x8dD580271D823CBDC4a1C6153f69Dad594C521Fd"),
+		name:              "WFTM/lzUSDC", // stargate
 		token0Addr:        common.HexToAddress("0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83"),
 		token1Addr:        common.HexToAddress("0x28a92dde19D9989F39A49905d7C9C2FAc7799bDf "),
 		decimalsMul0:      weiPerEther,
 		decimalsMul1:      usdcDecimalMul,
 		quoteIsStableCoin: true,
 	},
-	// WFTM/USDC.e(wormhole)
 	common.HexToAddress("0x2D0Ed226891E256d94F1071E2F94FBcDC9060E14"): {
 		addr:              common.HexToAddress("0x2D0Ed226891E256d94F1071E2F94FBcDC9060E14"),
+		name:              "WFTM/USDC.e", // wormhole
 		token0Addr:        common.HexToAddress("0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83"),
 		token1Addr:        common.HexToAddress("0x2F733095B80A04b38b0D10cC884524a3d09b836a"),
 		decimalsMul0:      weiPerEther,
@@ -190,7 +198,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to connect to the Ethereum websocket client: %v", err)
 	}
-	return
 	// Subscribe to Sync and Swap events
 	subscribeEvents(pairAbi, wsClient, pairAddresses)
 	panic("unreachable")
@@ -247,8 +254,9 @@ func queryReserves(pairAbi *abi.ABI, client *rpc.Client) {
 	if !exists {
 		log.Fatal("pairAbi.Methods")
 	}
+	// method.ID = crypto.Keccak256([]byte(method.Signature))[:4]
 	methodIdSignature := hexutil.Encode(hexutil.Bytes(method.ID))
-	log.Println("method.Sig", method.Sig, "methodIdSignature", methodIdSignature, "method.ID")
+	// log.Println("method.Sig", method.Sig, "methodIdSignature", methodIdSignature, "method.ID")
 
 	batch := make([]rpc.BatchElem, len(pairAddresses))
 	// responses := make([]Reserves, len(pairAddresses))
@@ -262,14 +270,14 @@ func queryReserves(pairAbi *abi.ABI, client *rpc.Client) {
 					Data:          method.ID,
 				},*/
 				map[string]string{
-					"to": addr.Hex(),
+					"to":   addr.Hex(),
 					"data": methodIdSignature,
 				},
 				"latest",
 			},
 			// You are using []byte for the Result, but it’s often safer to use a hexutil.Bytes type or directly handle it as string to avoid encoding issues
 			Result: new(hexutil.Bytes),
-			// Result: &responses[i],
+			// Result: &Reserves{},
 		}
 	}
 	err := client.BatchCall(batch)
@@ -282,36 +290,37 @@ func queryReserves(pairAbi *abi.ABI, client *rpc.Client) {
 		// res := elem.Result.(*string)
 		// log.Printf("%s\n", *res)
 		if elem.Error != nil {
-			log.Fatalf("Error fetching reserves for pair %s: %v", pairAddress, elem.Error, )
+			log.Fatalf("Error fetching reserves for pair %s: %v", pairAddress, elem.Error)
 			continue
 		}
 
 		// Unpack the result
+		// reserveData := (*elem.Result.(*Reserves))
+
 		reserveData := (*elem.Result.(*hexutil.Bytes))
-		outputs, err := pairAbi.Unpack("getReserves", reserveData)
+
+		values, err := method.Outputs.UnpackValues(reserveData)
 		if err != nil {
-			log.Fatalf("Failed to unpack reserves data for pair %s: %v", pairAddress, err)
+			log.Fatalln(err)
 		}
-		// reserve := elem.Result.(Reserves)
+		var reserve Reserves
+		err = method.Outputs.Copy(&reserve, values)
+		if err != nil {
+			log.Fatalln(err)
+		}
 
-		// Extract reserves
-		reserve0 := outputs[0].(*big.Int)
-		reserve1 := outputs[1].(*big.Int)
-		blockTimestampLast := outputs[2].(uint32)
-
+		// reserve0 := values[0].(*big.Int)
+		// reserve1 := values[1].(*big.Int)
+		// blockTimestampLast := values[2].(uint32)
 		pair := pairs[pairAddress]
-		pair.reserve = Reserves{
-			Reserve0:           reserve0,
-			Reserve1:           reserve1,
-			BlockTimestampLast: blockTimestampLast,
-		}
+		pair.reserve = reserve
 		amount0 := pair.amount0()
 		amount1 := pair.amount1()
 		amountF0 := pair.amountFloat0()
 		amountF1 := pair.amountFloat1()
 		price := pair.price()
 		priceF := pair.priceFloat()
-		log.Printf("pair %s rest init: price=%f amount0=%f amount1=%f priceF=%f amountF0=%f amountF1=%f\n", pairAddress.Hex(), price, amount0, amount1, priceF, amountF0, amountF1)
+		log.Printf("pair %s rest init: price=%f amount0=%f amount1=%f priceF=%f amountF0=%f amountF1=%f\n", pair.name, price, amount0, amount1, priceF, amountF0, amountF1)
 	}
 }
 
@@ -320,32 +329,63 @@ func queryReserves(pairAbi *abi.ABI, client *rpc.Client) {
 13:25:58.134973 main.go:106: topic Swap = 0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822
 */
 func subscribeEvents(contract abi.ABI, wsClient *rpc.Client, pairAddresses []common.Address) {
-	ethClient := ethclient.NewClient(wsClient)
-
-	log.Printf("topic %s = %s\n", syncEventStr, contract.Events[syncEventStr].ID)
-	log.Printf("topic %s = %s\n", swapEventStr, contract.Events[swapEventStr].ID)
+	client := ethclient.NewClient(wsClient)
+	abiCtx := AbiCtx {
+		Swap: newEvtCtx(&contract, "Swap"),
+		Sync: newEvtCtx(&contract, "Sync"),
+		Burn: newEvtCtx(&contract, "Burn"),
+		Mint: newEvtCtx(&contract, "Mint"),
+		Transfer: newEvtCtx(&contract, "Transfer"),
+	}
 	query := ethereum.FilterQuery{
 		Addresses: pairAddresses,
-		// This filters for the topics related to UniswapV2Pair Sync and Swap events
-		Topics: [][]common.Hash{
-			{contract.Events[syncEventStr].ID, contract.Events[swapEventStr].ID},
-		},
+		// Topic就是EventSignature的意思用于标识事件的唯一标识符。每个事件都有一个固定的签名
+		Topics: [][]common.Hash{{
+			abiCtx.Swap.id,
+			abiCtx.Sync.id,
+			abiCtx.Burn.id,
+			abiCtx.Mint.id,
+			abiCtx.Transfer.id,
+			// Approval 不会发生 token 数量变化
+		}},
 	}
-
 	logs := make(chan types.Log)
-	sub, err := ethClient.SubscribeFilterLogs(context.Background(), query, logs)
+	sub, err := client.SubscribeFilterLogs(context.Background(), query, logs)
 	if err != nil {
 		log.Fatalf("Failed to subscribe to logs: %v", err)
 	}
-	defer sub.Unsubscribe() // Ensure we unsubscribe when done
-
+	// defer sub.Unsubscribe()
 	for {
 		select {
 		case err := <-sub.Err():
 			log.Fatalf("Subscription error: %v", err)
 		case vLog := <-logs:
-			handleLog(contract, vLog)
+			handleLog(&abiCtx, vLog)
 		}
+	}
+}
+
+type EvtCtx struct {
+	arg abi.Arguments
+	id  common.Hash
+}
+type AbiCtx struct {
+	Swap     EvtCtx
+	Sync     EvtCtx
+	Burn     EvtCtx
+	Mint     EvtCtx
+	Transfer EvtCtx
+}
+
+func newEvtCtx(pairAbi *abi.ABI, event string) EvtCtx {
+	evt := pairAbi.Events[event]
+	if evt.Name == "" {
+		panic(event)
+	}
+	log.Println("newEvtCtx", event, evt.ID.Hex())
+	return EvtCtx{
+		arg: evt.Inputs,
+		id:  evt.ID,
 	}
 }
 
@@ -353,62 +393,55 @@ func subscribeEvents(contract abi.ABI, wsClient *rpc.Client, pairAddresses []com
 2024/07/21 07:47:01 main.go:132: Received log: {Address:0x2D0Ed226891E256d94F1071E2F94FBcDC9060E14 Topics:[0x1c411e9a96e071241c2f21f7726b17ae89e3cab4c78be50e062b03a9fffbbad1] Data:[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 2 14 59 251 135 147 62 3 17 47 218 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 44 34 148 73 28] BlockNumber:86354646 TxHash:0x534d7d16b35bf078fb681a54794ed51fafdb88993df76e9c93b9e1b242513540 TxIndex:1 BlockHash:0x0004801c00001dcfd0982594eccebf02fec83d1bd34a5a5f3326f9f7540e3983 Index:2 Removed:false}
 2024/07/21 07:47:01 main.go:148: Updated reserves for 0x2D0Ed226891E256d94F1071E2F94FBcDC9060E14: {2485071252506902170513370 1289070332188}
 2024/07/21 07:47:01 main.go:132: Received log: {Address:0x2D0Ed226891E256d94F1071E2F94FBcDC9060E14 Topics:[0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822 0x0000000000000000000000005023882f4d1ec10544fcb2066abe9c1645e95aa0 0x0000000000000000000000002c846bcb8aa71a7f90cc5c7731c7a7716a51616e] Data:[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 21 173 145 185 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 37 242 115 147 61 181 112 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0] BlockNumber:86354646 TxHash:0x534d7d16b35bf078fb681a54794ed51fafdb88993df76e9c93b9e1b242513540 TxIndex:1 BlockHash:0x0004801c00001dcfd0982594eccebf02fec83d1bd34a5a5f3326f9f7540e3983 Index:3 Removed:false}
+后面的两个 topic 通常是涉及到的代币地址或与事件相关的其他索引参数。例如，在 Uniswap 中，第二个 topic 可能是流动性提供者的地址，第三个 topic 可能是其它参与者或合约的地址
 */
-func handleLog(contract abi.ABI, vLog types.Log) {
-	// Explicitly log the event type for debugging purposes
-	log.Printf("Received log: %+v\n", vLog)
-	switch vLog.Topics[0].Hex() {
-	case contract.Events[syncEventStr].ID.Hex(): // EventSignature
-		var syncEvent struct {
-			Reserve0 *big.Int
-			Reserve1 *big.Int
-		}
-		err := contract.UnpackIntoInterface(&syncEvent, syncEventStr, vLog.Data)
+func handleLog(abiCtx *AbiCtx, logEvt types.Log) {
+	pairAddress := logEvt.Address
+	pair := pairs[pairAddress]
+	switch logEvt.Topics[0] {
+	case abiCtx.Sync.id: // EventSignature
+		values, err := abiCtx.Sync.arg.UnpackValues(logEvt.Data)
 		if err != nil {
 			log.Fatalf("Failed to unpack Sync event: %v", err)
 		}
-		pairAddress := vLog.Address
-		pairs[pairAddress].reserve = Reserves{
-			Reserve0: syncEvent.Reserve0,
-			Reserve1: syncEvent.Reserve1,
-		}
-		log.Printf("Updated reserves for %s: %v\n", pairAddress.Hex(), pairs[pairAddress])
-	case contract.Events[swapEventStr].ID.Hex():
-		var swapEvent struct {
-			Sender     common.Address
-			Amount0In  *big.Int
-			Amount1In  *big.Int
-			Amount0Out *big.Int
-			Amount1Out *big.Int
-			To         common.Address
-		}
-		err := contract.UnpackIntoInterface(&swapEvent, swapEventStr, vLog.Data)
+		var reserve SyncEvent
+		err = abiCtx.Sync.arg.Copy(&reserve, values)
 		if err != nil {
-			log.Printf("Failed to unpack Swap event: %v", err)
-			return
+			log.Fatalln(err)
 		}
-
-		pairAddress := vLog.Address
-		currentReserves, exists := pairs[pairAddress]
-		if !exists {
-			log.Printf("No reserves found for address %s", pairAddress.Hex())
-			return
+		pair.reserve.Reserve0 = reserve.Reserve0
+		pair.reserve.Reserve1 = reserve.Reserve1
+		log.Printf("ws_event Sync %s price %f\n", pair.name, pair.price())
+	case abiCtx.Swap.id:
+		values, err := abiCtx.Sync.arg.UnpackValues(logEvt.Data)
+		if err != nil {
+			log.Fatalf("Failed to unpack Sync event: %v", err)
 		}
-		_ = currentReserves
-
-		// Update reserves based on swap event
-		// updatedReserves := Reserves{
-		// 	Reserve0: new(big.Int).Set(currentReserves.Reserve0),
-		// 	Reserve1: new(big.Int).Set(currentReserves.Reserve1),
-		// }
-
-		// updatedReserves.Reserve0.Sub(updatedReserves.Reserve0, swapEvent.Amount0Out)
-		// updatedReserves.Reserve0.Add(updatedReserves.Reserve0, swapEvent.Amount0In)
-
-		// updatedReserves.Reserve1.Sub(updatedReserves.Reserve1, swapEvent.Amount1Out)
-		// updatedReserves.Reserve1.Add(updatedReserves.Reserve1, swapEvent.Amount1In)
-
-		// pairs[pairAddress].reserve = updatedReserves
-		// log.Printf("Updated reserves for %s after swap: %v", pairAddress.Hex(), pairs[pairAddress])
+		var swap swapEvent
+		err = abiCtx.Swap.arg.Copy(&swap, values)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		reserve := pair.reserve
+		reserve.Reserve0.Sub(reserve.Reserve0, swap.Amount0Out)
+		reserve.Reserve0.Add(reserve.Reserve0, swap.Amount0In)
+		reserve.Reserve1.Sub(reserve.Reserve1, swap.Amount1Out)
+		reserve.Reserve1.Add(reserve.Reserve1, swap.Amount1In)
+		log.Printf("ws_event Swap %s price %f\n", pair.name, pair.price())
+	case abiCtx.Burn.id:
+		log.Printf("ws_event Burn %s price %f\n", pair.name, pair.price())
+	case abiCtx.Mint.id:
+		log.Printf("ws_event Mint %s price %f\n", pair.name, pair.price())
+	case abiCtx.Transfer.id:
+		log.Printf("ws_event Transfer %s price %f\n", pair.name, pair.price())
 	}
+}
+
+type swapEvent struct {
+	Sender     common.Address
+	Amount0In  *big.Int
+	Amount1In  *big.Int
+	Amount0Out *big.Int
+	Amount1Out *big.Int
+	To         common.Address
 }
