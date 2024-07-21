@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"math/big"
 	"strings"
@@ -16,11 +15,11 @@ import (
 )
 
 const (
-	nodeURL     = "https://rpcapi.fantom.network"
-	wsNodeURL   = "wss://wsapi.fantom.network/"
-	pairABI     = `[{"constant":true,"inputs":[],"name":"getReserves","outputs":[{"name":"_reserve0","type":"uint112"},{"name":"_reserve1","type":"uint112"},{"name":"_blockTimestampLast","type":"uint32"}],"payable":false,"stateMutability":"view","type":"function"},{"anonymous":false,"inputs":[{"indexed":false,"name":"reserve0","type":"uint112"},{"indexed":false,"name":"reserve1","type":"uint112"}],"name":"Sync","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"sender","type":"address"},{"indexed":false,"name":"amount0In","type":"uint256"},{"indexed":false,"name":"amount1In","type":"uint256"},{"indexed":false,"name":"amount0Out","type":"uint256"},{"indexed":false,"name":"amount1Out","type":"uint256"},{"indexed":true,"name":"to","type":"address"}],"name":"Swap","type":"event"}]`
-	syncEvent   = "Sync"
-	swapEvent   = "Swap"
+	nodeURL      = "https://rpcapi.fantom.network"
+	wsNodeURL    = "wss://wsapi.fantom.network/"
+	pairABI      = `[{"constant":true,"inputs":[],"name":"getReserves","outputs":[{"name":"_reserve0","type":"uint112"},{"name":"_reserve1","type":"uint112"},{"name":"_blockTimestampLast","type":"uint32"}],"payable":false,"stateMutability":"view","type":"function"},{"anonymous":false,"inputs":[{"indexed":false,"name":"reserve0","type":"uint112"},{"indexed":false,"name":"reserve1","type":"uint112"}],"name":"Sync","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"sender","type":"address"},{"indexed":false,"name":"amount0In","type":"uint256"},{"indexed":false,"name":"amount1In","type":"uint256"},{"indexed":false,"name":"amount0Out","type":"uint256"},{"indexed":false,"name":"amount1Out","type":"uint256"},{"indexed":true,"name":"to","type":"address"}],"name":"Swap","type":"event"}]`
+	syncEventStr = "Sync"
+	swapEventStr = "Swap"
 )
 
 var pairAddresses = []common.Address{
@@ -35,9 +34,11 @@ type Reserves struct {
 	Reserve1 *big.Int
 }
 
-var reserves = make(map[common.Address]Reserves)
+var reserves = make(map[common.Address]Reserves, len(pairAddresses))
 
 func main() {
+	log.SetFlags(log.Lmicroseconds | log.Lshortfile)
+
 	// Initialize HTTP client
 	client, err := ethclient.Dial(nodeURL)
 	if err != nil {
@@ -56,12 +57,8 @@ func main() {
 	}
 
 	// Subscribe to Sync and Swap events
-	for _, addr := range pairAddresses {
-		go subscribeEvents(wsClient, addr)
-	}
-
-	// Prevent the main function from exiting
-	select {}
+	subscribeEvents(wsClient, pairAddresses)
+	panic("unreachable")
 }
 
 func queryReserves(client *ethclient.Client, pairAddress common.Address) {
@@ -95,10 +92,10 @@ func queryReserves(client *ethclient.Client, pairAddress common.Address) {
 		Reserve1: outputs[1].(*big.Int),
 	}
 
-	fmt.Printf("Initial reserves for %s: %v\n", pairAddress.Hex(), reserves[pairAddress])
+	log.Printf("Initial reserves for %s: %v\n", pairAddress.Hex(), reserves[pairAddress])
 }
 
-func subscribeEvents(client *rpc.Client, pairAddress common.Address) {
+func subscribeEvents(client *rpc.Client, pairAddresses []common.Address) {
 	ethClient := ethclient.NewClient(client)
 	contract, err := abi.JSON(strings.NewReader(pairABI))
 	if err != nil {
@@ -106,7 +103,11 @@ func subscribeEvents(client *rpc.Client, pairAddress common.Address) {
 	}
 
 	query := ethereum.FilterQuery{
-		Addresses: []common.Address{pairAddress},
+		Addresses: pairAddresses,
+		// This filters for the topics related to UniswapV2Pair Sync and Swap events
+		Topics: [][]common.Hash{
+			{contract.Events[syncEventStr].ID, contract.Events[swapEventStr].ID},
+		},
 	}
 
 	logs := make(chan types.Log)
@@ -114,6 +115,7 @@ func subscribeEvents(client *rpc.Client, pairAddress common.Address) {
 	if err != nil {
 		log.Fatalf("Failed to subscribe to logs: %v", err)
 	}
+	defer sub.Unsubscribe() // Ensure we unsubscribe when done
 
 	for {
 		select {
@@ -126,23 +128,59 @@ func subscribeEvents(client *rpc.Client, pairAddress common.Address) {
 }
 
 func handleLog(contract abi.ABI, vLog types.Log) {
+	// Explicitly log the event type for debugging purposes
+	log.Printf("Received log: %+v\n", vLog)
 	switch vLog.Topics[0].Hex() {
-	case contract.Events[syncEvent].ID.Hex():
-		var event struct {
+	case contract.Events[syncEventStr].ID.Hex():
+		var syncEvent struct {
 			Reserve0 *big.Int
 			Reserve1 *big.Int
 		}
-		err := contract.UnpackIntoInterface(&event, syncEvent, vLog.Data)
+		err := contract.UnpackIntoInterface(&syncEvent, syncEventStr, vLog.Data)
 		if err != nil {
 			log.Fatalf("Failed to unpack Sync event: %v", err)
 		}
 		pairAddress := vLog.Address
 		reserves[pairAddress] = Reserves{
-			Reserve0: event.Reserve0,
-			Reserve1: event.Reserve1,
+			Reserve0: syncEvent.Reserve0,
+			Reserve1: syncEvent.Reserve1,
 		}
-		fmt.Printf("Updated reserves for %s: %v\n", pairAddress.Hex(), reserves[pairAddress])
-	case contract.Events[swapEvent].ID.Hex():
-		// Handle Swap event similarly if needed
+		log.Printf("Updated reserves for %s: %v\n", pairAddress.Hex(), reserves[pairAddress])
+	case contract.Events[swapEventStr].ID.Hex():
+		var swapEvent struct {
+			Sender     common.Address
+			Amount0In  *big.Int
+			Amount1In  *big.Int
+			Amount0Out *big.Int
+			Amount1Out *big.Int
+			To         common.Address
+		}
+		err := contract.UnpackIntoInterface(&swapEvent, swapEventStr, vLog.Data)
+		if err != nil {
+			log.Printf("Failed to unpack Swap event: %v", err)
+			return
+		}
+
+		pairAddress := vLog.Address
+		currentReserves, exists := reserves[pairAddress]
+		if !exists {
+			log.Printf("No reserves found for address %s", pairAddress.Hex())
+			return
+		}
+
+		// Update reserves based on swap event
+		updatedReserves := Reserves{
+			Reserve0: new(big.Int).Set(currentReserves.Reserve0),
+			Reserve1: new(big.Int).Set(currentReserves.Reserve1),
+		}
+
+		updatedReserves.Reserve0.Sub(updatedReserves.Reserve0, swapEvent.Amount0Out)
+		updatedReserves.Reserve0.Add(updatedReserves.Reserve0, swapEvent.Amount0In)
+
+		updatedReserves.Reserve1.Sub(updatedReserves.Reserve1, swapEvent.Amount1Out)
+		updatedReserves.Reserve1.Add(updatedReserves.Reserve1, swapEvent.Amount1In)
+
+		reserves[pairAddress] = updatedReserves
+		log.Printf("Updated reserves for %s after swap: %v", pairAddress.Hex(), reserves[pairAddress])
 	}
 }
