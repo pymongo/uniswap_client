@@ -413,7 +413,7 @@ func handleLog(abiCtx *AbiCtx, logEvt types.Log) {
 		pair.reserve.Reserve1 = reserve.Reserve1
 		log.Printf("ws_event Sync %s price %f\n", pair.name, pair.price())
 	case abiCtx.Swap.id:
-		values, err := abiCtx.Sync.arg.UnpackValues(logEvt.Data)
+		values, err := abiCtx.Swap.arg.UnpackValues(logEvt.Data)
 		if err != nil {
 			log.Fatalf("Failed to unpack Sync event: %v", err)
 		}
