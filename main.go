@@ -10,13 +10,14 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
 //go:embed IUniswapV2Pair.abi.json
-var pairABI string
+var pairAbiStr string
 
 const (
 	nodeURL      = "https://rpcapi.fantom.network"
@@ -34,7 +35,6 @@ type Pair struct {
 	decimalsMul1 *big.Int
 	reserve      Reserves
 	// e.g. quote_coin/token1 is USDC so price is reserve0/reserve1, Vice versa
-	// 这个字段以后如果想做三角套利/循环套利可能废弃
 	quoteIsStableCoin bool
 }
 
@@ -52,6 +52,7 @@ func (pair *Pair) amount1() float64 {
 	float, _ := amount.Float64()
 	return float
 }
+
 // WETH/USDC 2424683984456539796875385 1301258450287
 /*
 price 用 big.Int 换算 decimals, priceF 用 big.Float 换算 decimals 二者几乎没有误差
@@ -164,27 +165,25 @@ var pairs = map[common.Address]*Pair{
 		decimalsMul0:      weiPerEther,
 		decimalsMul1:      usdcDecimalMul,
 		quoteIsStableCoin: true,
-	},		
+	},
 }
 
 func main() {
 	log.SetFlags(log.Lmicroseconds | log.Lshortfile)
 
 	// Initialize HTTP client
-	client, err := ethclient.Dial(nodeURL)
+	client, err := rpc.Dial(nodeURL)
 	if err != nil {
 		log.Fatalf("Failed to connect to the Ethereum client: %v", err)
 	}
 
-	contract, err := abi.JSON(strings.NewReader(pairABI))
+	pairAbi, err := abi.JSON(strings.NewReader(pairAbiStr))
 	if err != nil {
 		log.Fatalf("Failed to parse contract ABI: %v", err)
 	}
 
 	// Query initial reserves
-	for _, addr := range pairAddresses {
-		queryReserves(&contract, client, addr)
-	}
+	queryReserves(&pairAbi, client)
 
 	// Initialize WebSocket client
 	wsClient, err := rpc.Dial(wsNodeURL)
@@ -193,44 +192,131 @@ func main() {
 	}
 	return
 	// Subscribe to Sync and Swap events
-	subscribeEvents(contract, wsClient, pairAddresses)
+	subscribeEvents(pairAbi, wsClient, pairAddresses)
 	panic("unreachable")
 }
 
-func queryReserves(contract *abi.ABI, client *ethclient.Client, pairAddress common.Address) {
-	callData, err := contract.Pack("getReserves")
+/*
+## 单次 rpc 请求
+curl -X POST https://rpcapi.fantom.network \
+-H "Content-Type: application/json" \
+-d '{
+	"jsonrpc": "2.0",
+	"method": "eth_call",
+	"params": [
+		{
+			"to": "0xaC97153e7ce86fB3e61681b969698AF7C22b4B12",
+			"data": "0x0902f1ac"
+		},
+		"latest"
+	],
+	"id": 1
+}'
+## 批量 rpc 请求
+```python
+import requests
+json = [
+    {
+        "jsonrpc": "2.0",
+        "method": "eth_call",
+        "params": [
+            {"to": "0xaC97153e7ce86fB3e61681b969698AF7C22b4B12", "data": "0x0902f1ac"},
+            "latest",
+        ],
+        "id": 1,
+    },
+    {
+        "jsonrpc": "2.0",
+        "method": "eth_call",
+        "params": [
+            {"to": "0x084F933B6401a72291246B5B5eD46218a68773e6", "data": "0x0902f1ac"},
+            "latest",
+        ],
+        "id": 2,
+    },
+]
+r=requests.post("https://rpcapi.fantom.network", json=json)
+print(r.text)
+```
+*/
+// 如何一次请求查询四个Pair的getReserve? 一种是直接rpc muticall,还有一种使用合约实现muticall
+// rpc.Client 没有 ethclient.Client.CallContract
+func queryReserves(pairAbi *abi.ABI, client *rpc.Client) {
+	method, exists := pairAbi.Methods["getReserves"]
+	if !exists {
+		log.Fatal("pairAbi.Methods")
+	}
+	// method.Sig
+	// methodIdSignature1 := "0x" + hex.EncodeToString(crypto.Keccak256([]byte(method.Sig))[:4])
+	methodIdSignature := hexutil.Encode(hexutil.Bytes(method.ID))
+	// methodIdSignature := method.ID
+	log.Println("method.Sig", method.Sig, "methodIdSignature", methodIdSignature, "method.ID")
+
+	batch := make([]rpc.BatchElem, len(pairAddresses))
+	// responses := make([]Reserves, len(pairAddresses))
+	for i, addr := range pairAddresses {
+		_ = addr
+		batch[i] = rpc.BatchElem{
+			Method: "eth_call",
+			Args: []interface{}{
+				/*
+					ethereum.CallMsg{
+						To: (*common.Address)(addr.Bytes()),
+						Data:          method.ID,
+					},
+				*/
+				map[string]string{
+					// "to": addr.Hex(),
+					// "data": methodIdSignature,
+					"to":   "0xaC97153e7ce86fB3e61681b969698AF7C22b4B12",
+					"data": "0x0902f1ac",
+				},
+				"latest",
+			},
+			Result: new([]byte),
+			// Result: &responses[i],
+		}
+	}
+	err := client.BatchCall(batch)
 	if err != nil {
-		log.Fatalf("Failed to pack call data: %v", err)
+		log.Fatalf("Batch call failed: %v", err)
 	}
+	// Process the results
+	for i, elem := range batch {
+		pairAddress := pairAddresses[i]
+		if elem.Error != nil {
+			log.Printf("%v+\n", batch)
+			log.Fatalf("Error fetching reserves for pair %s: %v, elem=%v+", pairAddress, elem.Error, elem)
+			continue
+		}
 
-	msg := ethereum.CallMsg{
-		To:   &pairAddress,
-		Data: callData,
-	}
+		// Unpack the result
+		reserveData := (*elem.Result.(*[]byte))
+		outputs, err := pairAbi.Unpack("getReserves", reserveData)
+		if err != nil {
+			log.Fatalf("Failed to unpack reserves data for pair %s: %v", pairAddress, err)
+		}
+		// reserve := elem.Result.(Reserves)
 
-	res, err := client.CallContract(context.Background(), msg, nil)
-	if err != nil {
-		log.Fatalf("Failed to call contract: %v", err)
-	}
+		// Extract reserves
+		reserve0 := outputs[0].(*big.Int)
+		reserve1 := outputs[1].(*big.Int)
+		blockTimestampLast := outputs[2].(uint32)
 
-	outputs, err := contract.Unpack("getReserves", res)
-	if err != nil {
-		log.Fatalf("Failed to unpack call result: %v", err)
+		pair := pairs[pairAddress]
+		pair.reserve = Reserves{
+			Reserve0:           reserve0,
+			Reserve1:           reserve1,
+			BlockTimestampLast: blockTimestampLast,
+		}
+		amount0 := pair.amount0()
+		amount1 := pair.amount1()
+		amountF0 := pair.amountFloat0()
+		amountF1 := pair.amountFloat1()
+		price := pair.price()
+		priceF := pair.priceFloat()
+		log.Printf("pair %s rest init: price=%f amount0=%f amount1=%f priceF=%f amountF0=%f amountF1=%f\n", pairAddress.Hex(), price, amount0, amount1, priceF, amountF0, amountF1)
 	}
-
-	pair := pairs[pairAddress]
-	pair.reserve = Reserves{
-		Reserve0:           outputs[0].(*big.Int),
-		Reserve1:           outputs[1].(*big.Int),
-		BlockTimestampLast: outputs[2].(uint32),
-	}
-	amount0 := pair.amount0()
-	amount1 := pair.amount1()
-	amountF0 := pair.amountFloat0()
-	amountF1 := pair.amountFloat1()
-	price := pair.price()
-	priceF := pair.priceFloat()
-	log.Printf("pair %s rest init: price=%f amount0=%f amount1=%f priceF=%f amountF0=%f amountF1=%f\n", pairAddress.Hex(), price, amount0, amount1, priceF, amountF0, amountF1)
 }
 
 /*
@@ -276,7 +362,7 @@ func handleLog(contract abi.ABI, vLog types.Log) {
 	// Explicitly log the event type for debugging purposes
 	log.Printf("Received log: %+v\n", vLog)
 	switch vLog.Topics[0].Hex() {
-	case contract.Events[syncEventStr].ID.Hex():
+	case contract.Events[syncEventStr].ID.Hex(): // EventSignature
 		var syncEvent struct {
 			Reserve0 *big.Int
 			Reserve1 *big.Int
