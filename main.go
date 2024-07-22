@@ -486,7 +486,7 @@ func handleLog(abiCtx *AbiCtx, logEvt types.Log) {
 		if err != nil {
 			log.Fatalln(err)
 		}		
-		log.Printf("ws_event Burn %s Topics %v+, data %v+ price %f\n", pair.name, logEvt.Topics, data, pair.price())
+		log.Printf("ws_event Burn %s Topics %v, data %#v price %f\n", pair.name, logEvt.Topics, data, pair.price())
 	case abiCtx.Mint.id:
 		values, err := abiCtx.Mint.arg.UnpackValues(logEvt.Data)
 		if err != nil {
@@ -498,7 +498,7 @@ func handleLog(abiCtx *AbiCtx, logEvt types.Log) {
 			// 14:56:18.233005 main.go:497: abi: field value can't be found in the given value
 			log.Fatalln(err, logEvt.Data)
 		}		
-		log.Printf("ws_event Mint %s Topics %v+, data %v+ price %f\n", pair.name, logEvt.Topics, data, pair.price())
+		log.Printf("ws_event Mint %s Topics %v, data %#v price %f\n", pair.name, logEvt.Topics, data, pair.price())
 	case abiCtx.Transfer.id:
 		values, err := abiCtx.Transfer.arg.UnpackValues(logEvt.Data)
 		if err != nil {
@@ -509,7 +509,7 @@ func handleLog(abiCtx *AbiCtx, logEvt types.Log) {
 		if err != nil {
 			log.Println(err)
 		}		
-		log.Printf("ws_event Transfer %s Topics %v+, data %v+ price %f\n", pair.name, logEvt.Topics, data, pair.price())
+		log.Printf("ws_event Transfer %s Topics %v, data %#v price %f\n", pair.name, logEvt.Topics, data, pair.price())
 	}
 }
 
