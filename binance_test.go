@@ -42,9 +42,7 @@ func TestBnWs2(t *testing.T) {
 		builder.WriteByte('&')
 		builder.WriteString(symbol)
 		builder.WriteString("@depth5@100ms")
-		// if i < len(symbols)-1 {
-		// 	builder.WriteByte('&')
-		// }
+		// if i < len(symbols)-1 { builder.WriteByte('&') }
 	}
 	wsUrl := builder.String()
 	log.Println("wsUrl", wsUrl)

@@ -100,6 +100,8 @@ func (pair *Pair) priceFloat() float64 {
 	}
 }
 
+// json/eth_rlp decode/Unmarshal 都是通过运行时反射匹配字段，必须要大写才能找到字段
+// abi package uses reflection to match the ABI event parameters with struct fields by name.
 type Reserves struct {
 	Reserve0 *big.Int
 	Reserve1 *big.Int
@@ -112,7 +114,7 @@ type SyncEvent struct {
 	Reserve1 *big.Int
 }
 
-// https://ethereum.org/en/developers/docs/data-structures-and-encoding/rlp/
+// https://ethereum.org/en/developers/docs/data-structures-and-encoding/rlp/ unmarshal
 // func (b *Reserves) DecodeRLP(s *rlp.Stream) error {
 // 	panic("haha")
 // }
@@ -482,7 +484,7 @@ func handleLog(abiCtx *AbiCtx, logEvt types.Log) {
 		var data burnEvent
 		err = abiCtx.Burn.arg.Copy(&data, values)
 		if err != nil {
-			log.Println(err)
+			log.Fatalln(err)
 		}		
 		log.Printf("ws_event Burn %s Topics %v+, data %v+ price %f\n", pair.name, logEvt.Topics, data, pair.price())
 	case abiCtx.Mint.id:
@@ -494,7 +496,7 @@ func handleLog(abiCtx *AbiCtx, logEvt types.Log) {
 		err = abiCtx.Mint.arg.Copy(&data, values)
 		if err != nil {
 			// 14:56:18.233005 main.go:497: abi: field value can't be found in the given value
-			log.Println(err, logEvt.Data)
+			log.Fatalln(err, logEvt.Data)
 		}		
 		log.Printf("ws_event Mint %s Topics %v+, data %v+ price %f\n", pair.name, logEvt.Topics, data, pair.price())
 	case abiCtx.Transfer.id:
@@ -520,24 +522,24 @@ type swapEvent struct {
 	To         common.Address
 }
 
-//lint:ignore U1000 ignore
+// json/eth_rlp decode/Unmarshal 都是通过运行时反射匹配字段，必须要大写才能找到字段
 type transferEvent struct {
-	from common.Address
-	to common.Address
-	value *big.Int
+	From common.Address
+	To common.Address
+	Value *big.Int
 }
 
-//lint:ignore U1000 ignore
+// json/eth_rlp decode/Unmarshal 都是通过运行时反射匹配字段，必须要大写才能找到字段
 type burnEvent struct {
-	sender common.Address
-	amount0 *big.Int
-	amount1 *big.Int
-	to common.Address
+	Sender common.Address
+	Amount0 *big.Int
+	Amount1 *big.Int
+	To common.Address
 }
 
 //lint:ignore U1000 ignore
 type mintEvent struct {
-	sender common.Address
-	amount0 *big.Int
-	amount1 *big.Int
+	Sender common.Address
+	Amount0 *big.Int
+	Amount1 *big.Int
 }
