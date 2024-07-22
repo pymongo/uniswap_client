@@ -11,9 +11,11 @@ import (
 
 // can't define new method on non local type
 // func (self *big.Int) FnName() {}
+// go test -timeout 30s -run ^TestHelloName$ uniswap
+// go test -run TestHelloName
 func TestHelloName(t *testing.T) {
 	result := "0x000000000000000000000000000000000000000000000000000000135d10239b00000000000000000000000000000000000000000000049e145dd82cd75b9d5500000000000000000000000000000000000000000000000000000000669e4462"
-	data, err := os.ReadFile("example.txt")
+	data, err := os.ReadFile("IUniswapV2Pair.abi.json")
 	if err != nil {
         log.Fatalf("Error opening file: %v", err)
     }

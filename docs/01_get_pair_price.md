@@ -1,4 +1,4 @@
-# [Uniswap rpc批量查询价格]()
+# Uniswap价格批量查询与ws订阅行情
 
 由于 Uniswap V1 版本必须包含 ETH 所以两个 token 之间交换必须先换成 ETH 去中转效率很低已经弃用了
 
@@ -48,8 +48,7 @@ type Pair struct {
 	addr       common.Address
 	token0Addr common.Address
 	token1Addr common.Address
-	// e.g. 1e18
-	decimalsMul0 *big.Int
+	decimalsMul0 *big.Int // e.g. 1e18
 	decimalsMul1 *big.Int
 	reserve      Reserves
 	// e.g. quote_coin/token1 is USDC so price is reserve0/reserve1, Vice versa
@@ -211,22 +210,24 @@ eventSignature 的概念就类似于 Topic
 ```go
 func subscribeEvents(contract abi.ABI, wsClient *rpc.Client, pairAddresses []common.Address) {
 	ethClient := ethclient.NewClient(wsClient)
+	abiCtx := AbiCtx {
+		Swap: newEvtCtx(&contract, "Swap"),
+		Sync: newEvtCtx(&contract, "Sync"),
+		Burn: newEvtCtx(&contract, "Burn"),
+		Mint: newEvtCtx(&contract, "Mint"),
+		Transfer: newEvtCtx(&contract, "Transfer"),
+	}
 	query := ethereum.FilterQuery{
 		Addresses: pairAddresses,
+		// Topic就是EventSignature的意思用于标识事件的唯一标识符。每个事件都有一个固定的签名
 		Topics: [][]common.Hash{{
-			contract.Events["swap"].ID,
-			contract.Events["sync"].ID,
-			contract.Events["burn"].ID,
-			contract.Events["mint"].ID,
-			contract.Events["transfer"].ID,
+			abiCtx.Swap.id,
+			abiCtx.Sync.id,
+			abiCtx.Burn.id,
+			abiCtx.Mint.id,
+			abiCtx.Transfer.id,
+			// Approval 不会发生 token 数量变化
 		}},
-	}
-	abiCtx := AbiCtx {
-		swap: newEvtCtx(&contract, "swap"),
-		sync: newEvtCtx(&contract, "sync"),
-		burn: newEvtCtx(&contract, "burn"),
-		mint: newEvtCtx(&contract, "mint"),
-		transfer: newEvtCtx(&contract, "transfer"),
 	}
 	logs := make(chan types.Log)
 	sub, err := ethClient.SubscribeFilterLogs(context.Background(), query, logs)

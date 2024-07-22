@@ -112,20 +112,16 @@ type SyncEvent struct {
 	Reserve1 *big.Int
 }
 
+// https://ethereum.org/en/developers/docs/data-structures-and-encoding/rlp/
 // func (b *Reserves) DecodeRLP(s *rlp.Stream) error {
 // 	panic("haha")
 // }
 
-var pairAddresses = []common.Address{
-	common.HexToAddress("0xaC97153e7ce86fB3e61681b969698AF7C22b4B12"),
-	common.HexToAddress("0x084F933B6401a72291246B5B5eD46218a68773e6"),
-	common.HexToAddress("0x8dD580271D823CBDC4a1C6153f69Dad594C521Fd"),
-	common.HexToAddress("0x2D0Ed226891E256d94F1071E2F94FBcDC9060E14"),
-}
-
 /*
 router : 0x5023882f4d1ec10544fcb2066abe9c1645e95aa0
 factory: 0xC831A5cBfb4aC2Da5ed5B194385DFD9bF5bFcBa7
+
+factory getPair 查询不到会返回 0x0000000000000000000000000000000000000000
 
 ## tokens
 0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83,WFTM
@@ -174,7 +170,56 @@ var pairs = map[common.Address]*Pair{
 		decimalsMul1:      usdcDecimalMul,
 		quoteIsStableCoin: true,
 	},
+	common.HexToAddress("0xCE102955A36f148e034C6Fc8Aac0a2ea86f0B281"): {
+		addr:              common.HexToAddress("0xCE102955A36f148e034C6Fc8Aac0a2ea86f0B281"),
+		name:              "axlUSDC/WIGO", // rug, priceF=0.021381 amountF0=0.064873 amountF1=3.034192
+		token0Addr:        common.HexToAddress("0x1B6382DBDEa11d97f24495C9A90b7c88469134a4"),
+		token1Addr:        common.HexToAddress("0xE992bEAb6659BFF447893641A378FbbF031C5bD6"),
+		decimalsMul0:      usdcDecimalMul,
+		decimalsMul1:      weiPerEther,
+		quoteIsStableCoin: false,
+	},
+	common.HexToAddress("0x96bDF4d9fb8dB9FcD1E0CA146faBD891f2F1A96d"): {
+		addr:              common.HexToAddress("0x96bDF4d9fb8dB9FcD1E0CA146faBD891f2F1A96d"),
+		name:              "USDC/WIGO",
+		token0Addr:        common.HexToAddress("0x04068DA6C83AFCFA0e13ba15A6696662335D5B75"),
+		token1Addr:        common.HexToAddress("0xE992bEAb6659BFF447893641A378FbbF031C5bD6"),
+		decimalsMul0:      usdcDecimalMul,
+		decimalsMul1:      weiPerEther,
+		quoteIsStableCoin: false,
+	},
+	common.HexToAddress("0xB66E5c89EbA830B31B3dDcc468dD50b3256737c5"): {
+		addr:              common.HexToAddress("0xB66E5c89EbA830B31B3dDcc468dD50b3256737c5"),
+		name:              "USDC.e/WIGO",
+		decimalsMul0:      usdcDecimalMul,
+		decimalsMul1:      weiPerEther,
+		quoteIsStableCoin: false,
+	},
+	common.HexToAddress("0xAA606265Df9d29687876B500c18d5DDf1a66a91E"): {
+		addr:              common.HexToAddress("0xAA606265Df9d29687876B500c18d5DDf1a66a91E"),
+		name:              "lzUSDC/WIGO",
+		decimalsMul0:      usdcDecimalMul,
+		decimalsMul1:      weiPerEther,
+		quoteIsStableCoin: false,
+	},
+	common.HexToAddress("0xB66E5c89EbA830B31B3dDcc468dD50b3256737c5"): {
+		addr:              common.HexToAddress("0xB66E5c89EbA830B31B3dDcc468dD50b3256737c5"),
+		name:              "WFTM/WIGO",
+		decimalsMul0:      usdcDecimalMul,
+		decimalsMul1:      weiPerEther,
+		quoteIsStableCoin: false,
+	},	
 }
+func getPairAddr() []common.Address {
+	p := make([]common.Address, len(pairs))
+	i := 0
+	for key := range pairs {
+		p[i] = key
+		i += 1
+	}
+	return p
+}
+var pairAddresses = getPairAddr()
 
 func main() {
 	log.SetFlags(log.Lmicroseconds | log.Lshortfile)
@@ -247,8 +292,9 @@ r=requests.post("https://rpcapi.fantom.network", json=json)
 print(r.text)
 ```
 */
-// 如何一次请求查询四个Pair的getReserve? 一种是直接rpc muticall,还有一种使用合约实现muticall
+// 如何一次请求查询四个Pair的getReserve? 一种是直接rpc muticall,还有一种使用合约实现multicall
 // rpc.Client 没有 ethclient.Client.CallContract
+// multicall 合约示例 https://ftmscan.com/address/0xb828c456600857abd4ed6c32facc607bd0464f4f#code
 func queryReserves(pairAbi *abi.ABI, client *rpc.Client) {
 	method, exists := pairAbi.Methods["getReserves"]
 	if !exists {
@@ -415,7 +461,7 @@ func handleLog(abiCtx *AbiCtx, logEvt types.Log) {
 	case abiCtx.Swap.id:
 		values, err := abiCtx.Swap.arg.UnpackValues(logEvt.Data)
 		if err != nil {
-			log.Fatalf("Failed to unpack Sync event: %v", err)
+			log.Fatalf("Failed to unpack Swap event: %v", err)
 		}
 		var swap swapEvent
 		err = abiCtx.Swap.arg.Copy(&swap, values)
@@ -429,11 +475,39 @@ func handleLog(abiCtx *AbiCtx, logEvt types.Log) {
 		reserve.Reserve1.Add(reserve.Reserve1, swap.Amount1In)
 		log.Printf("ws_event Swap %s price %f\n", pair.name, pair.price())
 	case abiCtx.Burn.id:
-		log.Printf("ws_event Burn %s price %f\n", pair.name, pair.price())
+		values, err := abiCtx.Burn.arg.UnpackValues(logEvt.Data)
+		if err != nil {
+			log.Fatalf("Failed to unpack Burn event: %v", err)
+		}
+		var data burnEvent
+		err = abiCtx.Burn.arg.Copy(&data, values)
+		if err != nil {
+			log.Println(err)
+		}		
+		log.Printf("ws_event Burn %s Topics %v+, data %v+ price %f\n", pair.name, logEvt.Topics, data, pair.price())
 	case abiCtx.Mint.id:
-		log.Printf("ws_event Mint %s price %f\n", pair.name, pair.price())
+		values, err := abiCtx.Mint.arg.UnpackValues(logEvt.Data)
+		if err != nil {
+			log.Fatalf("Failed to unpack Mint event: %v", err)
+		}
+		var data mintEvent
+		err = abiCtx.Mint.arg.Copy(&data, values)
+		if err != nil {
+			// 14:56:18.233005 main.go:497: abi: field value can't be found in the given value
+			log.Println(err, logEvt.Data)
+		}		
+		log.Printf("ws_event Mint %s Topics %v+, data %v+ price %f\n", pair.name, logEvt.Topics, data, pair.price())
 	case abiCtx.Transfer.id:
-		log.Printf("ws_event Transfer %s price %f\n", pair.name, pair.price())
+		values, err := abiCtx.Transfer.arg.UnpackValues(logEvt.Data)
+		if err != nil {
+			log.Fatalf("Failed to unpack Transfer event: %v", err)
+		}
+		var data transferEvent
+		err = abiCtx.Transfer.arg.Copy(&data, values)
+		if err != nil {
+			log.Println(err)
+		}		
+		log.Printf("ws_event Transfer %s Topics %v+, data %v+ price %f\n", pair.name, logEvt.Topics, data, pair.price())
 	}
 }
 
@@ -444,4 +518,26 @@ type swapEvent struct {
 	Amount0Out *big.Int
 	Amount1Out *big.Int
 	To         common.Address
+}
+
+//lint:ignore U1000 ignore
+type transferEvent struct {
+	from common.Address
+	to common.Address
+	value *big.Int
+}
+
+//lint:ignore U1000 ignore
+type burnEvent struct {
+	sender common.Address
+	amount0 *big.Int
+	amount1 *big.Int
+	to common.Address
+}
+
+//lint:ignore U1000 ignore
+type mintEvent struct {
+	sender common.Address
+	amount0 *big.Int
+	amount1 *big.Int
 }

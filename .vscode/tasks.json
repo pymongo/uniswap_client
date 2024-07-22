@@ -1,0 +1,16 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "go test",
+            "type": "shell",
+            "command": "proxychains",
+            "args": [
+                "go",
+                "test",
+                "-run",
+                "TestBnWs2"
+            ]
+        }
+    ]
+}
