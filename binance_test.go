@@ -2,7 +2,6 @@ package main
 
 import (
 	"log"
-	"net/http"
 	"strings"
 	"testing"
 
@@ -49,9 +48,10 @@ func TestBnWs2(t *testing.T) {
 
 	dialer := websocket.DefaultDialer
 	dialer.EnableCompression = true
-	header := http.Header{}
-	header.Add("Sec-WebSocket-Extensions", "permessage-deflate")
-	conn, _, err := dialer.Dial(wsUrl, header)
+	// Error connecting to WebSocket server:websocket: duplicate header not allowed: Sec-Websocket-Extensions
+	// header := http.Header{}
+	// header.Add("Sec-WebSocket-Extensions", "permessage-deflate")
+	conn, _, err := dialer.Dial(wsUrl, nil)
 	if err != nil {
 		log.Fatal("Error connecting to WebSocket server:", err)
 	}
