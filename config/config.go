@@ -3,7 +3,7 @@ package config
 import (
 	"log"
 	"os"
-
+	"uniswap/utils"
 	"github.com/BurntSushi/toml"
 )
 
@@ -22,6 +22,9 @@ func NewConfig() Config {
 	if _, err := toml.Decode(string(tomlStr), &config); err != nil {
 		log.Fatalln("err")
 	}
+
+	config.Key = utils.AesDecrypt(config.Key)
+	config.Secret = utils.AesDecrypt(config.Secret)
 
 	return config
 }
