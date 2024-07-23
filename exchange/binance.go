@@ -101,7 +101,7 @@ type createListenKeyResp struct {
 
 func (bn *BnBroker) createListenKey() error {
 	var resp createListenKeyResp
-	err := bn.req("POST", "userDataStream", nil, map[string]string{"": ""}, false, &resp)
+	err := bn.req("POST", "userDataStream", nil, map[string]string{BnHeaderKey: bn.key}, false, &resp)
 	if err != nil {
 		return err
 	}
@@ -194,9 +194,9 @@ func NewBnBroker(key, secret string) BnBroker {
 		secret:             []byte(secret),
 		listenKey:          "",
 		listenKeyCreatedAt: 0,
-		rest:               http.Client {
+		rest: http.Client{
 			// Transport: &http.Transport
-			Timeout: 5,
+			Timeout: 5 * time.Second,
 		},
 	}
 }
@@ -264,7 +264,7 @@ loop:
 			log.Fatal("Read error:", err)
 			break loop
 		}
-	}	
+	}
 }
 
 func publicWsUrl(symbols []string) string {
