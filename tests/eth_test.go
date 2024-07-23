@@ -1,4 +1,4 @@
-package main
+package tests
 
 import (
 	"encoding/json"
@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"uniswap/config"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 )
@@ -18,8 +19,8 @@ func TestHelloName(t *testing.T) {
 	result := "0x000000000000000000000000000000000000000000000000000000135d10239b00000000000000000000000000000000000000000000049e145dd82cd75b9d5500000000000000000000000000000000000000000000000000000000669e4462"
 	data, err := os.ReadFile("IUniswapV2Pair.abi.json")
 	if err != nil {
-        log.Fatalf("Error opening file: %v", err)
-    }
+		log.Fatalf("Error opening file: %v", err)
+	}
 	pairAbi, err := abi.JSON(strings.NewReader(string(data)))
 	if err != nil {
 		log.Fatalf("Failed to parse contract ABI: %v", err)
@@ -45,33 +46,43 @@ func TestJson(t *testing.T) {
 
 	var s1 S1
 	err := json.Unmarshal(msg, &s1)
-    if err != nil {
-        log.Fatalln(err)
-    }
+	if err != nil {
+		log.Fatalln(err)
+	}
 	if s1.Stream != "foo" {
 		log.Fatalln("not ok")
 	}
 	err = json.Unmarshal(msg2, &s1)
-    if err != nil {
-        log.Fatalln(err)
-    }
+	if err != nil {
+		log.Fatalln(err)
+	}
 	if s1.Stream != "foo" {
 		log.Fatalln("not ok")
 	}
 
 	var s2 S2
 	err = json.Unmarshal(msg2, &s2)
-    if err != nil {
-        log.Fatalln(err)
-    }
+	if err != nil {
+		log.Fatalln(err)
+	}
 	if s2.Stream != "foo" {
 		log.Fatalln("not ok")
 	}
 	err = json.Unmarshal(msg, &s2)
-    if err != nil {
-        log.Fatalln(err)
-    }
+	if err != nil {
+		log.Fatalln(err)
+	}
 	if s2.Stream != "foo" {
 		log.Fatalln("not ok")
-	}	
+	}
+}
+
+func TestConfig(t *testing.T) {
+	pwd, _ := os.Getwd()
+	log.Println("pwd", pwd)
+	os.Chdir("..")
+	pwd, _ = os.Getwd()
+	log.Println("pwd", pwd)
+	conf := config.NewConfig()
+	log.Println(conf.Key)
 }

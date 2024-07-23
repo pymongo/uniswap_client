@@ -135,15 +135,15 @@ factory getPair 查询不到会返回 0x0000000000000000000000000000000000000000
 var weiPerEther = new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)
 var usdcDecimalMul = new(big.Int).Exp(big.NewInt(10), big.NewInt(6), nil)
 var pairs = map[common.Address]*Pair{
-	common.HexToAddress("0xaC97153e7ce86fB3e61681b969698AF7C22b4B12"): {
-		addr:              common.HexToAddress("0xaC97153e7ce86fB3e61681b969698AF7C22b4B12"),
-		name:              "USDC/WFTM",
-		token0Addr:        common.HexToAddress("0x04068DA6C83AFCFA0e13ba15A6696662335D5B75"),
-		token1Addr:        common.HexToAddress("0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83"),
-		decimalsMul0:      usdcDecimalMul,
-		decimalsMul1:      weiPerEther,
-		quoteIsStableCoin: false,
-	},
+	// common.HexToAddress("0xaC97153e7ce86fB3e61681b969698AF7C22b4B12"): {
+	// 	addr:              common.HexToAddress("0xaC97153e7ce86fB3e61681b969698AF7C22b4B12"),
+	// 	name:              "USDC/WFTM",
+	// 	token0Addr:        common.HexToAddress("0x04068DA6C83AFCFA0e13ba15A6696662335D5B75"),
+	// 	token1Addr:        common.HexToAddress("0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83"),
+	// 	decimalsMul0:      usdcDecimalMul,
+	// 	decimalsMul1:      weiPerEther,
+	// 	quoteIsStableCoin: false,
+	// },
 	common.HexToAddress("0x084F933B6401a72291246B5B5eD46218a68773e6"): {
 		addr:              common.HexToAddress("0x084F933B6401a72291246B5B5eD46218a68773e6"),
 		name:              "axlUSDC/WFTM",

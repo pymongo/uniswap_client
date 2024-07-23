@@ -3,8 +3,10 @@ module uniswap
 go 1.22.4
 
 require (
+	github.com/bytedance/sonic v1.11.9
 	github.com/ethereum/go-ethereum v1.14.7
 	github.com/gorilla/websocket v1.5.3
+	github.com/BurntSushi/toml v1.4.0
 )
 
 require (
@@ -12,7 +14,6 @@ require (
 	github.com/StackExchange/wmi v1.2.1 // indirect
 	github.com/bits-and-blooms/bitset v1.10.0 // indirect
 	github.com/btcsuite/btcd/btcec/v2 v2.2.0 // indirect
-	github.com/bytedance/sonic v1.11.9 // indirect
 	github.com/bytedance/sonic/loader v0.1.1 // indirect
 	github.com/cloudwego/base64x v0.1.4 // indirect
 	github.com/cloudwego/iasm v0.2.0 // indirect

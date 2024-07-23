@@ -9,7 +9,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -17,12 +16,6 @@ import (
 	"github.com/bytedance/sonic"
 	"github.com/gorilla/websocket"
 )
-
-var symbols = []string{
-	"ftmusdc",
-	"celousdc",
-	"jupusdc",
-}
 
 //lint:ignore U1000 unused
 type BnBroker struct {
@@ -51,6 +44,7 @@ func (bn *BnBroker) req(method, path string, params, headers map[string]string, 
 	if auth {
 		timeMs := time.Now().UnixMilli()
 		timeMsStr := strconv.FormatInt(timeMs, 10)
+		headers[BnHeaderKey] = bn.key
 		if qs.Len() == 0 {
 			qs.WriteByte('&')
 		}
@@ -194,47 +188,35 @@ func handlePublicChannel(symbol string, channel string, data []byte) {
 	}
 }
 
-func main() {
-	log.SetFlags(log.Lmicroseconds | log.Lshortfile)
-	/*
-		(可选) JIT 预热 bn ws json 类型，JIT 汇编代码仅支持 x86_64 架构
-		easyjson 类似 serde_json 编译时 codegen 方式生成 json 反序列化代码避免反射的性能开销
-		Go 的反射包（reflect）在一定程度上使用了缓存
-	*/
-	err := sonic.Pretouch(reflect.TypeOf(StreamData{}))
+func NewBnBroker(key, secret string) BnBroker {
+	return BnBroker{
+		key:                key,
+		secret:             []byte(secret),
+		listenKey:          "",
+		listenKeyCreatedAt: 0,
+		rest:               http.Client {
+			// Transport: &http.Transport
+			Timeout: 5,
+		},
+	}
+}
+func (bn *BnBroker) Init(symbols []string) {
+	if len(bn.key) == 0 {
+		return
+	}
+	err := bn.createListenKey()
 	if err != nil {
 		log.Fatalln(err)
 	}
-
-	var builder strings.Builder
-	builder.Grow(64)
-	builder.WriteString(BnWsUrl)
-	builder.WriteString("?streams=")
-	for i, symbol := range symbols {
-		if i != 0 {
-			builder.WriteByte('/')
-		}
-		builder.WriteString(symbol)
-		builder.WriteString("@bookTicker") // websocket 库会自动做 url escape
-		builder.WriteByte('/')
-		builder.WriteString(symbol)
-		builder.WriteString("@depth5@100ms")
-		// builder.WriteString("%40depth5%40100ms")
-		// if i < len(symbols)-1 { builder.WriteByte('&') }
-	}
-	wsUrl := builder.String()
-	log.Println("wsUrl", wsUrl)
-	// dialer default would send ping in interval
+	// TODO private ws
 	dialer := websocket.DefaultDialer
 	dialer.EnableCompression = true
-	// Error connecting to WebSocket server:websocket: duplicate header not allowed: Sec-Websocket-Extensions
-	// header := http.Header{}
-	// header.Add("Sec-WebSocket-Extensions", "permessage-deflate")
-	conn, _, err := dialer.Dial(wsUrl, nil)
+	conn, _, err := dialer.Dial(publicWsUrl(symbols), nil)
 	if err != nil {
 		log.Fatal("Error connecting to WebSocket server:", err)
 	}
 	defer conn.Close()
+
 loop:
 	for {
 		opcode, msg, err := conn.ReadMessage()
@@ -282,5 +264,26 @@ loop:
 			log.Fatal("Read error:", err)
 			break loop
 		}
+	}	
+}
+
+func publicWsUrl(symbols []string) string {
+	var builder strings.Builder
+	builder.Grow(64)
+	builder.WriteString(BnWsUrl)
+	builder.WriteString("?streams=")
+	for i, symbol := range symbols {
+		if i != 0 {
+			builder.WriteByte('/')
+		}
+		builder.WriteString(symbol)
+		builder.WriteString("@bookTicker") // websocket 库会自动做 url escape
+		builder.WriteByte('/')
+		builder.WriteString(symbol)
+		builder.WriteString("@depth5@100ms")
+		// builder.WriteString("%40depth5%40100ms")
+		// if i < len(symbols)-1 { builder.WriteByte('&') }
 	}
+	wsUrl := builder.String()
+	return wsUrl
 }
