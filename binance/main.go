@@ -3,44 +3,33 @@ package main
 import (
 	"log"
 	"strings"
-	"testing"
-
 	"github.com/gorilla/websocket"
 )
 
 var symbols = []string{
 	"ftmusdc",
 }
+const (
+	BnWsUrl = "wss://stream.binance.com:9443/stream"
+)
 
-// can't define new method on non local type
-// func (self *big.Int) FnName() {}
-// go test -timeout 30s -run ^TestHelloName$ uniswap
-// go test -run TestHelloName
-func TestBnWs1(t *testing.T) {
-	var channels []string
-	for _, symbol := range symbols {
-		// 简单的字符串连接情况下 +拼接性能更好不需要解析 不需要解析 format 模板, fmt.Sprintf("%s@bookTicker", symbol) 性能更差
-		channels = append(channels, symbol + "%s@bookTicker", symbol + "@depth5@100ms")
-	}
-	params := strings.Join(channels, "&")
-	wsUrl := "wss://stream.binance.com:9443/stream" + params
-	_ = wsUrl
-}
-
-func TestBnWs2(t *testing.T) {
+func main() {
 	log.SetFlags(log.Lmicroseconds | log.Lshortfile)
 	var builder strings.Builder
 	builder.Grow(64)
-	builder.WriteString("wss://stream.binance.com:9443/stream?")
+	builder.WriteString(BnWsUrl)
+	builder.WriteString("?streams=")
 	for i, symbol := range symbols {
 		if i != 0 {
-			builder.WriteByte('&')
+			builder.WriteByte('/')
 		}
 		builder.WriteString(symbol)
 		builder.WriteString("@bookTicker")
-		builder.WriteByte('&')
+		// builder.WriteString("%40bookTicker")
+		builder.WriteByte('/')
 		builder.WriteString(symbol)
 		builder.WriteString("@depth5@100ms")
+		// builder.WriteString("%40depth5%40100ms")
 		// if i < len(symbols)-1 { builder.WriteByte('&') }
 	}
 	wsUrl := builder.String()
@@ -51,7 +40,6 @@ func TestBnWs2(t *testing.T) {
 	// Error connecting to WebSocket server:websocket: duplicate header not allowed: Sec-Websocket-Extensions
 	// header := http.Header{}
 	// header.Add("Sec-WebSocket-Extensions", "permessage-deflate")
-	//  Error connecting to WebSocket server:websocket: bad handshake
 	conn, _, err := dialer.Dial(wsUrl, nil)
 	if err != nil {
 		log.Fatal("Error connecting to WebSocket server:", err)
@@ -64,5 +52,5 @@ func TestBnWs2(t *testing.T) {
 			return
 		}
 		log.Println("opcode", opcode, "msg", string(msg))
-	}
+	}	
 }
