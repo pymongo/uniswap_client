@@ -1,6 +1,6 @@
 # Uniswap价格批量查询与ws订阅行情
 
-由于 Uniswap V1 版本必须包含 ETH 所以两个 token 之间交换必须先换成 ETH 去中转效率很低已经弃用了
+由于 Uniswap V1 版本必须包含 ETH 所以两个 token 之间交换必须先换成 ETH 去中转，效率很低 V1 已经彻底弃用了
 
 由于 V3 版本 CLMM 和 V4 版本的 DLMM 数学模型过于复杂，还是先从 AMM 模型的 V2 进行入门和学习
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
 	"os"
 	"strings"
@@ -30,4 +31,47 @@ func TestHelloName(t *testing.T) {
 	// marshal
 	_ = method.Outputs
 	_ = []byte(result[2:])
+}
+
+func TestJson(t *testing.T) {
+	type S1 struct {
+		Stream string
+	}
+	type S2 struct {
+		Stream string `json:"stream"`
+	}
+	msg := []byte(`{"stream":"foo"}`)
+	msg2 := []byte(`{"Stream":"foo"}`)
+
+	var s1 S1
+	err := json.Unmarshal(msg, &s1)
+    if err != nil {
+        log.Fatalln(err)
+    }
+	if s1.Stream != "foo" {
+		log.Fatalln("not ok")
+	}
+	err = json.Unmarshal(msg2, &s1)
+    if err != nil {
+        log.Fatalln(err)
+    }
+	if s1.Stream != "foo" {
+		log.Fatalln("not ok")
+	}
+
+	var s2 S2
+	err = json.Unmarshal(msg2, &s2)
+    if err != nil {
+        log.Fatalln(err)
+    }
+	if s2.Stream != "foo" {
+		log.Fatalln("not ok")
+	}
+	err = json.Unmarshal(msg, &s2)
+    if err != nil {
+        log.Fatalln(err)
+    }
+	if s2.Stream != "foo" {
+		log.Fatalln("not ok")
+	}	
 }
