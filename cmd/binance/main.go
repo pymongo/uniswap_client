@@ -3,12 +3,13 @@ package main
 import (
 	"log"
 	"uniswap/config"
-	"uniswap/exchange"
 )
 
 func main() {
 	log.SetFlags(log.Lmicroseconds | log.Lshortfile)
 	conf := config.NewConfig()
-	bn := exchange.NewBnBroker(conf.Key, conf.Secret)
-	bn.Init([]string{"ftmusdc"})
+	_ = conf
+	// ch := make(chan model.Bbo, 128)
+	// bn := exchange.NewBnBroker(conf.Key, conf.Secret, ch)
+	// bn.Init([]string{"ftmusdc"})
 }

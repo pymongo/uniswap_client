@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"uniswap/model"
 
 	"github.com/bytedance/sonic"
 	"github.com/gorilla/websocket"
@@ -23,8 +24,8 @@ type BnBroker struct {
 	secret             []byte
 	listenKey          string
 	listenKeyCreatedAt int64
-
-	rest http.Client
+	bboCh          chan model.Bbo
+	rest               http.Client
 }
 
 func (bn *BnBroker) req(method, path string, params, headers map[string]string, auth bool, respVal interface{}) error {
@@ -166,10 +167,17 @@ type BookTicker struct {
 	AskPrice F64 `json:"a"`
 	A        F64
 }
+func (b BookTicker) bbo() model.Bbo {
+	return model.Bbo{
+		Ask:    float64(b.AskPrice),
+		Bid:    float64(b.BidPrice),
+		TimeMs: time.Now().UnixMilli(),
+	}
+}
 
-func handlePublicChannel(symbol string, channel string, data []byte) {
+func handlePublicChannel(symbol string, channel string, data []byte, bboCh chan model.Bbo) {
 	// transmute/String::from_utf8_unchecked
-	// *(*string)(unsafe.Pointer(&b))
+	// unsafe.String(unsafe.SliceData(b.buf), len(b.buf)), *(*string)(unsafe.Pointer(&b))
 	switch channel {
 	case "bookTicker":
 		var bookTicker BookTicker
@@ -177,7 +185,8 @@ func handlePublicChannel(symbol string, channel string, data []byte) {
 		if err != nil {
 			log.Fatalln(err)
 		}
-		log.Printf("%#v\n", bookTicker)
+		// log.Printf("%#v\n", bookTicker)
+		bboCh <- bookTicker.bbo()
 	case "depth5@100ms":
 		var depth Depth
 		err := sonic.Unmarshal(data, &depth)
@@ -188,7 +197,7 @@ func handlePublicChannel(symbol string, channel string, data []byte) {
 	}
 }
 
-func NewBnBroker(key, secret string) BnBroker {
+func NewBnBroker(key, secret string, bboCh chan model.Bbo) BnBroker {
 	return BnBroker{
 		key:                key,
 		secret:             []byte(secret),
@@ -198,9 +207,10 @@ func NewBnBroker(key, secret string) BnBroker {
 			// Transport: &http.Transport
 			Timeout: 5 * time.Second,
 		},
+		bboCh: bboCh,
 	}
 }
-func (bn *BnBroker) Init(symbols []string) {
+func (bn *BnBroker) Mainloop(symbols []string) {
 	if len(bn.key) == 0 {
 		return
 	}
@@ -225,7 +235,6 @@ loop:
 		case websocket.TextMessage:
 			var streamData StreamData
 			err = sonic.Unmarshal(msg, &streamData)
-			// err = json.Unmarshal(msg, &streamData)
 			if err != nil {
 				log.Fatalln(err)
 			}
@@ -240,11 +249,9 @@ loop:
 			if aIdx == -1 {
 				log.Println("TODO handle private channel", string(streamData.Data))
 			} else {
-				// transmute/String::from_utf8_unchecked
-				// *(*string)(unsafe.Pointer(&b))
 				symbol := streamData.Stream[:aIdx]
 				channel := streamData.Stream[aIdx+1:]
-				handlePublicChannel(symbol, channel, streamData.Data)
+				handlePublicChannel(symbol, channel, streamData.Data, bn.bboCh)
 			}
 		case websocket.BinaryMessage:
 			log.Println(string(msg))
@@ -278,11 +285,9 @@ func publicWsUrl(symbols []string) string {
 		}
 		builder.WriteString(symbol)
 		builder.WriteString("@bookTicker") // websocket 库会自动做 url escape
-		builder.WriteByte('/')
-		builder.WriteString(symbol)
-		builder.WriteString("@depth5@100ms")
-		// builder.WriteString("%40depth5%40100ms")
-		// if i < len(symbols)-1 { builder.WriteByte('&') }
+		// builder.WriteByte('/')
+		// builder.WriteString(symbol)
+		// builder.WriteString("@depth5@100ms")
 	}
 	wsUrl := builder.String()
 	return wsUrl
