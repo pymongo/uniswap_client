@@ -3,13 +3,17 @@ module uniswap
 go 1.22.4
 
 require (
+	github.com/BurntSushi/toml v1.4.0
 	github.com/bytedance/sonic v1.11.9
 	github.com/ethereum/go-ethereum v1.14.7
 	github.com/gorilla/websocket v1.5.3
-	github.com/BurntSushi/toml v1.4.0
+	github.com/tyler-smith/go-bip32 v1.0.0
+	github.com/tyler-smith/go-bip39 v1.1.0
 )
 
 require (
+	github.com/FactomProject/basen v0.0.0-20150613233007-fe3947df716e // indirect
+	github.com/FactomProject/btcutilecc v0.0.0-20130527213604-d3a63a5752ec // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/StackExchange/wmi v1.2.1 // indirect
 	github.com/bits-and-blooms/bitset v1.10.0 // indirect
