@@ -55,10 +55,10 @@ func NewUniBroker(key string, bboCh chan model.Bbo) UniBroker {
 	if err != nil {
 		log.Fatalf("Failed to convert to ECDSA private key: %v", err)
 	}
+	// web3.Web3().eth.account.from_key('addr').address
 	publicKey := privateKey.Public().(*ecdsa.PublicKey)
 	address := crypto.PubkeyToAddress(*publicKey)
-	// web3.Web3().eth.account.from_key('addr').address
-	log.Println("addr", address, "key", key, "Encode(privateKeyBytes)", hexutil.Encode(privateKeyBytes), "len", len(privateKeyBytes))
+	// log.Println("addr", address, "key", key, "Encode(privateKeyBytes)", hexutil.Encode(privateKeyBytes), "len", len(privateKeyBytes))
 
 	rest, err := ethclient.Dial(rpcUrl)
 	if err != nil {
@@ -70,11 +70,10 @@ func NewUniBroker(key string, bboCh chan model.Bbo) UniBroker {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	log.Println(address, hexutil.Encode(params))
-	panic("todo")
 	msg := ethereum.CallMsg{
 		To:   &usdcAddr,
-		Data: params,
+		// abi.go return append(method.ID, arguments...), nil
+		Data: append(Erc20BalanceOf.ID, params...),
 	}
 	resp, err := rest.CallContract(context.Background(), msg, nil)
 	if err != nil {
@@ -90,7 +89,7 @@ func NewUniBroker(key string, bboCh chan model.Bbo) UniBroker {
 		log.Fatalln(err)
 	}
 	usdcF64, _ := new(big.Float).SetInt(usdcBitInt).Float64()
-	usdc := usdcF64 / 1e18
+	usdc := usdcF64 / 1e6
 	ethWei, err := rest.BalanceAt(context.Background(), address, nil) // nil for the latests block
 	if err != nil {
 		log.Fatalln(err)
