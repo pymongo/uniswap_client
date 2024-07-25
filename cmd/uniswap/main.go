@@ -2,14 +2,12 @@ package main
 
 import (
 	"arbitrage/config"
+	"arbitrage/exchange"
 	"log"
 )
 
 func main() {
 	log.SetFlags(log.Lmicroseconds | log.Lshortfile)
 	conf := config.NewConfig()
-	_ = conf
-	// ch := make(chan model.Bbo, 128)
-	// bn := exchange.NewBnBroker(conf.Key, conf.Secret, ch)
-	// bn.Init([]string{"ftmusdc"})
+	exchange.NewUniBroker(conf.PrivateKey, nil)	
 }

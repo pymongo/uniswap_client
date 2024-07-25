@@ -3,13 +3,14 @@ package config
 import (
 	"log"
 	"os"
-	"uniswap/utils"
+	"arbitrage/utils"
 	"github.com/BurntSushi/toml"
 )
 
 type Config struct {
 	Key string
 	Secret string
+	PrivateKey string
 }
 
 func NewConfig() Config {
@@ -25,6 +26,7 @@ func NewConfig() Config {
 
 	config.Key = utils.AesDecrypt(config.Key)
 	config.Secret = utils.AesDecrypt(config.Secret)
+	config.PrivateKey = utils.AesDecrypt(config.PrivateKey)
 
 	return config
 }

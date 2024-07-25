@@ -1,10 +1,11 @@
 package main
+
 import (
+	"arbitrage/exchange"
 	"context"
 	_ "embed"
 	"log"
 	"math/big"
-	"strings"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -15,7 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
-//go:embed IUniswapV2Pair.abi.json
+// go:embed IUniswapV2Pair.abi.json
 var pairAbiStr string
 
 const (
@@ -231,10 +232,7 @@ func main() {
 		log.Fatalf("Failed to connect to the Ethereum client: %v", err)
 	}
 
-	pairAbi, err := abi.JSON(strings.NewReader(pairAbiStr))
-	if err != nil {
-		log.Fatalf("Failed to parse contract ABI: %v", err)
-	}
+	var pairAbi = exchange.PairAbi
 
 	// Query initial reserves
 	queryReserves(&pairAbi, client)

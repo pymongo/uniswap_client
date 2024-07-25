@@ -1,9 +1,9 @@
 package main
 
 import (
+	"arbitrage/utils"
 	"log"
 	"os"
-	"uniswap/utils"
 )
 
 func main() {

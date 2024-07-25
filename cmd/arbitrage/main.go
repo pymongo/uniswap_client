@@ -1,10 +1,10 @@
 package main
 
 import (
+	"arbitrage/config"
+	"arbitrage/exchange"
+	"arbitrage/model"
 	"log"
-	"uniswap/config"
-	"uniswap/exchange"
-	"uniswap/model"
 
 	"time"
 )

@@ -1,6 +1,7 @@
 package exchange
 
 import (
+	"arbitrage/model"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -12,7 +13,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"uniswap/model"
 
 	"github.com/bytedance/sonic"
 	"github.com/gorilla/websocket"
@@ -24,7 +24,7 @@ type BnBroker struct {
 	secret             []byte
 	listenKey          string
 	listenKeyCreatedAt int64
-	bboCh          chan model.Bbo
+	bboCh              chan model.Bbo
 	rest               http.Client
 }
 
@@ -167,6 +167,7 @@ type BookTicker struct {
 	AskPrice F64 `json:"a"`
 	A        F64
 }
+
 func (b BookTicker) bbo() model.Bbo {
 	return model.Bbo{
 		Ask:    float64(b.AskPrice),

@@ -1,12 +1,13 @@
 package tests
 
 import (
+	"arbitrage/config"
+	"arbitrage/exchange"
 	"encoding/json"
 	"log"
 	"os"
 	"strings"
 	"testing"
-	"uniswap/config"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 )
@@ -85,4 +86,11 @@ func TestConfig(t *testing.T) {
 	log.Println("pwd", pwd)
 	conf := config.NewConfig()
 	log.Println(conf.Key)
+}
+
+func TestUni(t *testing.T) {
+	log.SetFlags(log.Lmicroseconds | log.Lshortfile)
+	os.Chdir("..")
+	conf := config.NewConfig()
+	exchange.NewUniBroker(conf.PrivateKey, nil)
 }
