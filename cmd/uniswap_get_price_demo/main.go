@@ -31,9 +31,9 @@ type Pair struct {
 	token1Addr   common.Address
 	decimalsMul0 *big.Int // e.g. 1e18
 	decimalsMul1 *big.Int
-	reserve      Reserves
+	reserve      exchange.GetReservesOutput
 	// e.g. quote_coin/token1 is USDC so price is reserve0/reserve1, Vice versa
-	quoteIsStableCoin bool
+	priceIsQuoteDivBase bool
 }
 
 func (pair *Pair) amount0() float64 {
@@ -71,7 +71,7 @@ func (pair *Pair) price() float64 {
 	amount0 := pair.amount0()
 	amount1 := pair.amount1()
 
-	if pair.quoteIsStableCoin {
+	if pair.priceIsQuoteDivBase {
 		return amount1 / amount0
 	} else {
 		return amount0 / amount1
@@ -93,26 +93,13 @@ func (pair *Pair) priceFloat() float64 {
 	amount0 := pair.amountFloat0()
 	amount1 := pair.amountFloat1()
 
-	if pair.quoteIsStableCoin {
+	if pair.priceIsQuoteDivBase {
 		return amount1 / amount0
 	} else {
 		return amount0 / amount1
 	}
 }
 
-// json/eth_rlp decode/Unmarshal 都是通过运行时反射匹配字段，必须要大写才能找到字段
-// abi package uses reflection to match the ABI event parameters with struct fields by name.
-type Reserves struct {
-	Reserve0 *big.Int
-	Reserve1 *big.Int
-	// sync event 里面没有 BlockTimestampLast 字段
-	// 但是这个字段也必须定义否则会报错 abi: field _blockTimestampLast can't be found in the given value
-	BlockTimestampLast uint32
-}
-type SyncEvent struct {
-	Reserve0 *big.Int
-	Reserve1 *big.Int
-}
 
 // https://ethereum.org/en/developers/docs/data-structures-and-encoding/rlp/ unmarshal
 // func (b *Reserves) DecodeRLP(s *rlp.Stream) error {
@@ -152,7 +139,7 @@ var pairs = map[common.Address]*Pair{
 		token1Addr:        common.HexToAddress("0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83"),
 		decimalsMul0:      usdcDecimalMul,
 		decimalsMul1:      weiPerEther,
-		quoteIsStableCoin: false,
+		priceIsQuoteDivBase: false,
 	},
 	common.HexToAddress("0x8dD580271D823CBDC4a1C6153f69Dad594C521Fd"): {
 		addr:              common.HexToAddress("0x8dD580271D823CBDC4a1C6153f69Dad594C521Fd"),
@@ -161,7 +148,7 @@ var pairs = map[common.Address]*Pair{
 		token1Addr:        common.HexToAddress("0x28a92dde19D9989F39A49905d7C9C2FAc7799bDf "),
 		decimalsMul0:      weiPerEther,
 		decimalsMul1:      usdcDecimalMul,
-		quoteIsStableCoin: true,
+		priceIsQuoteDivBase: true,
 	},
 	common.HexToAddress("0x2D0Ed226891E256d94F1071E2F94FBcDC9060E14"): {
 		addr:              common.HexToAddress("0x2D0Ed226891E256d94F1071E2F94FBcDC9060E14"),
@@ -170,7 +157,7 @@ var pairs = map[common.Address]*Pair{
 		token1Addr:        common.HexToAddress("0x2F733095B80A04b38b0D10cC884524a3d09b836a"),
 		decimalsMul0:      weiPerEther,
 		decimalsMul1:      usdcDecimalMul,
-		quoteIsStableCoin: true,
+		priceIsQuoteDivBase: true,
 	},
 	common.HexToAddress("0xCE102955A36f148e034C6Fc8Aac0a2ea86f0B281"): {
 		addr:              common.HexToAddress("0xCE102955A36f148e034C6Fc8Aac0a2ea86f0B281"),
@@ -179,7 +166,7 @@ var pairs = map[common.Address]*Pair{
 		token1Addr:        common.HexToAddress("0xE992bEAb6659BFF447893641A378FbbF031C5bD6"),
 		decimalsMul0:      usdcDecimalMul,
 		decimalsMul1:      weiPerEther,
-		quoteIsStableCoin: false,
+		priceIsQuoteDivBase: false,
 	},
 	common.HexToAddress("0x96bDF4d9fb8dB9FcD1E0CA146faBD891f2F1A96d"): {
 		addr:              common.HexToAddress("0x96bDF4d9fb8dB9FcD1E0CA146faBD891f2F1A96d"),
@@ -188,28 +175,28 @@ var pairs = map[common.Address]*Pair{
 		token1Addr:        common.HexToAddress("0xE992bEAb6659BFF447893641A378FbbF031C5bD6"),
 		decimalsMul0:      usdcDecimalMul,
 		decimalsMul1:      weiPerEther,
-		quoteIsStableCoin: false,
+		priceIsQuoteDivBase: false,
 	},
 	common.HexToAddress("0xB66E5c89EbA830B31B3dDcc468dD50b3256737c5"): {
 		addr:              common.HexToAddress("0xB66E5c89EbA830B31B3dDcc468dD50b3256737c5"),
 		name:              "USDC.e/WIGO",
 		decimalsMul0:      usdcDecimalMul,
 		decimalsMul1:      weiPerEther,
-		quoteIsStableCoin: false,
+		priceIsQuoteDivBase: false,
 	},
 	common.HexToAddress("0xAA606265Df9d29687876B500c18d5DDf1a66a91E"): {
 		addr:              common.HexToAddress("0xAA606265Df9d29687876B500c18d5DDf1a66a91E"),
 		name:              "lzUSDC/WIGO",
 		decimalsMul0:      usdcDecimalMul,
 		decimalsMul1:      weiPerEther,
-		quoteIsStableCoin: false,
+		priceIsQuoteDivBase: false,
 	},
 	common.HexToAddress("0xB66E5c89EbA830B31B3dDcc468dD50b3256737c5"): {
 		addr:              common.HexToAddress("0xB66E5c89EbA830B31B3dDcc468dD50b3256737c5"),
 		name:              "WFTM/WIGO",
 		decimalsMul0:      usdcDecimalMul,
 		decimalsMul1:      weiPerEther,
-		quoteIsStableCoin: false,
+		priceIsQuoteDivBase: false,
 	},	
 }
 func getPairAddr() []common.Address {
@@ -235,7 +222,7 @@ func main() {
 	var pairAbi = exchange.PairAbi
 
 	// Query initial reserves
-	queryReserves(&pairAbi, client)
+	queryReserves(client)
 
 	// Initialize WebSocket client
 	wsClient, err := rpc.Dial(wsNodeURL)
@@ -294,11 +281,8 @@ print(r.text)
 // 如何一次请求查询四个Pair的getReserve? 一种是直接rpc muticall,还有一种使用合约实现multicall
 // rpc.Client 没有 ethclient.Client.CallContract
 // multicall 合约示例 https://ftmscan.com/address/0xb828c456600857abd4ed6c32facc607bd0464f4f#code
-func queryReserves(pairAbi *abi.ABI, client *rpc.Client) {
-	method, exists := pairAbi.Methods["getReserves"]
-	if !exists {
-		log.Fatal("pairAbi.Methods")
-	}
+func queryReserves(client *rpc.Client) {
+	method := exchange.GetReserves
 	// method.ID = crypto.Keccak256([]byte(method.Signature))[:4]
 	methodIdSignature := hexutil.Encode(hexutil.Bytes(method.ID))
 	// log.Println("method.Sig", method.Sig, "methodIdSignature", methodIdSignature, "method.ID")
@@ -348,7 +332,7 @@ func queryReserves(pairAbi *abi.ABI, client *rpc.Client) {
 		if err != nil {
 			log.Fatalln(err)
 		}
-		var reserve Reserves
+		var reserve exchange.GetReservesOutput
 		err = method.Outputs.Copy(&reserve, values)
 		if err != nil {
 			log.Fatalln(err)
@@ -375,22 +359,22 @@ func queryReserves(pairAbi *abi.ABI, client *rpc.Client) {
 */
 func subscribeEvents(contract abi.ABI, wsClient *rpc.Client, pairAddresses []common.Address) {
 	client := ethclient.NewClient(wsClient)
-	abiCtx := AbiCtx {
-		Swap: newEvtCtx(&contract, "Swap"),
-		Sync: newEvtCtx(&contract, "Sync"),
-		Burn: newEvtCtx(&contract, "Burn"),
-		Mint: newEvtCtx(&contract, "Mint"),
-		Transfer: newEvtCtx(&contract, "Transfer"),
+	abiCtx := exchange.PairEventsAbi {
+		Swap: exchange.NewEventAbi(&contract, "Swap"),
+		Sync: exchange.NewEventAbi(&contract, "Sync"),
+		Burn: exchange.NewEventAbi(&contract, "Burn"),
+		Mint: exchange.NewEventAbi(&contract, "Mint"),
+		Transfer: exchange.NewEventAbi(&contract, "Transfer"),
 	}
 	query := ethereum.FilterQuery{
 		Addresses: pairAddresses,
 		// Topic就是EventSignature的意思用于标识事件的唯一标识符。每个事件都有一个固定的签名
 		Topics: [][]common.Hash{{
-			abiCtx.Swap.id,
-			abiCtx.Sync.id,
-			abiCtx.Burn.id,
-			abiCtx.Mint.id,
-			abiCtx.Transfer.id,
+			abiCtx.Swap.Id,
+			abiCtx.Sync.Id,
+			abiCtx.Burn.Id,
+			abiCtx.Mint.Id,
+			abiCtx.Transfer.Id,
 			// Approval 不会发生 token 数量变化
 		}},
 	}
@@ -410,60 +394,36 @@ func subscribeEvents(contract abi.ABI, wsClient *rpc.Client, pairAddresses []com
 	}
 }
 
-type EvtCtx struct {
-	arg abi.Arguments
-	id  common.Hash
-}
-type AbiCtx struct {
-	Swap     EvtCtx
-	Sync     EvtCtx
-	Burn     EvtCtx
-	Mint     EvtCtx
-	Transfer EvtCtx
-}
-
-func newEvtCtx(pairAbi *abi.ABI, event string) EvtCtx {
-	evt := pairAbi.Events[event]
-	if evt.Name == "" {
-		panic(event)
-	}
-	log.Println("newEvtCtx", event, evt.ID.Hex())
-	return EvtCtx{
-		arg: evt.Inputs,
-		id:  evt.ID,
-	}
-}
-
 /*
 2024/07/21 07:47:01 main.go:132: Received log: {Address:0x2D0Ed226891E256d94F1071E2F94FBcDC9060E14 Topics:[0x1c411e9a96e071241c2f21f7726b17ae89e3cab4c78be50e062b03a9fffbbad1] Data:[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 2 14 59 251 135 147 62 3 17 47 218 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 44 34 148 73 28] BlockNumber:86354646 TxHash:0x534d7d16b35bf078fb681a54794ed51fafdb88993df76e9c93b9e1b242513540 TxIndex:1 BlockHash:0x0004801c00001dcfd0982594eccebf02fec83d1bd34a5a5f3326f9f7540e3983 Index:2 Removed:false}
 2024/07/21 07:47:01 main.go:148: Updated reserves for 0x2D0Ed226891E256d94F1071E2F94FBcDC9060E14: {2485071252506902170513370 1289070332188}
 2024/07/21 07:47:01 main.go:132: Received log: {Address:0x2D0Ed226891E256d94F1071E2F94FBcDC9060E14 Topics:[0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822 0x0000000000000000000000005023882f4d1ec10544fcb2066abe9c1645e95aa0 0x0000000000000000000000002c846bcb8aa71a7f90cc5c7731c7a7716a51616e] Data:[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 21 173 145 185 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 37 242 115 147 61 181 112 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0] BlockNumber:86354646 TxHash:0x534d7d16b35bf078fb681a54794ed51fafdb88993df76e9c93b9e1b242513540 TxIndex:1 BlockHash:0x0004801c00001dcfd0982594eccebf02fec83d1bd34a5a5f3326f9f7540e3983 Index:3 Removed:false}
 后面的两个 topic 通常是涉及到的代币地址或与事件相关的其他索引参数。例如，在 Uniswap 中，第二个 topic 可能是流动性提供者的地址，第三个 topic 可能是其它参与者或合约的地址
 */
-func handleLog(abiCtx *AbiCtx, logEvt types.Log) {
+func handleLog(abiCtx *exchange.PairEventsAbi, logEvt types.Log) {
 	pairAddress := logEvt.Address
 	pair := pairs[pairAddress]
 	switch logEvt.Topics[0] {
-	case abiCtx.Sync.id: // EventSignature
-		values, err := abiCtx.Sync.arg.UnpackValues(logEvt.Data)
+	case abiCtx.Sync.Id: // EventSignature
+		values, err := abiCtx.Sync.Arg.UnpackValues(logEvt.Data)
 		if err != nil {
 			log.Fatalf("Failed to unpack Sync event: %v", err)
 		}
-		var reserve SyncEvent
-		err = abiCtx.Sync.arg.Copy(&reserve, values)
+		var reserve exchange.SyncEvent
+		err = abiCtx.Sync.Arg.Copy(&reserve, values)
 		if err != nil {
 			log.Fatalln(err)
 		}
 		pair.reserve.Reserve0 = reserve.Reserve0
 		pair.reserve.Reserve1 = reserve.Reserve1
 		log.Printf("ws_event Sync %s price %f\n", pair.name, pair.price())
-	case abiCtx.Swap.id:
-		values, err := abiCtx.Swap.arg.UnpackValues(logEvt.Data)
+	case abiCtx.Swap.Id:
+		values, err := abiCtx.Swap.Arg.UnpackValues(logEvt.Data)
 		if err != nil {
 			log.Fatalf("Failed to unpack Swap event: %v", err)
 		}
-		var swap swapEvent
-		err = abiCtx.Swap.arg.Copy(&swap, values)
+		var swap exchange.SwapEvent
+		err = abiCtx.Swap.Arg.Copy(&swap, values)
 		if err != nil {
 			log.Fatalln(err)
 		}
@@ -473,70 +433,39 @@ func handleLog(abiCtx *AbiCtx, logEvt types.Log) {
 		reserve.Reserve1.Sub(reserve.Reserve1, swap.Amount1Out)
 		reserve.Reserve1.Add(reserve.Reserve1, swap.Amount1In)
 		log.Printf("ws_event Swap %s price %f\n", pair.name, pair.price())
-	case abiCtx.Burn.id:
-		values, err := abiCtx.Burn.arg.UnpackValues(logEvt.Data)
+	case abiCtx.Burn.Id:
+		values, err := abiCtx.Burn.Arg.UnpackValues(logEvt.Data)
 		if err != nil {
 			log.Fatalf("Failed to unpack Burn event: %v", err)
 		}
-		var data burnEvent
-		err = abiCtx.Burn.arg.Copy(&data, values)
+		var data exchange.BurnEvent
+		err = abiCtx.Burn.Arg.Copy(&data, values)
 		if err != nil {
 			log.Fatalln(err)
 		}		
 		log.Printf("ws_event Burn %s Topics %v, data %#v price %f\n", pair.name, logEvt.Topics, data, pair.price())
-	case abiCtx.Mint.id:
-		values, err := abiCtx.Mint.arg.UnpackValues(logEvt.Data)
+	case abiCtx.Mint.Id:
+		values, err := abiCtx.Mint.Arg.UnpackValues(logEvt.Data)
 		if err != nil {
 			log.Fatalf("Failed to unpack Mint event: %v", err)
 		}
-		var data mintEvent
-		err = abiCtx.Mint.arg.Copy(&data, values)
+		var data exchange.MintEvent
+		err = abiCtx.Mint.Arg.Copy(&data, values)
 		if err != nil {
 			// 14:56:18.233005 main.go:497: abi: field value can't be found in the given value
 			log.Fatalln(err, logEvt.Data)
 		}		
 		log.Printf("ws_event Mint %s Topics %v, data %#v price %f\n", pair.name, logEvt.Topics, data, pair.price())
-	case abiCtx.Transfer.id:
-		values, err := abiCtx.Transfer.arg.UnpackValues(logEvt.Data)
+	case abiCtx.Transfer.Id:
+		values, err := abiCtx.Transfer.Arg.UnpackValues(logEvt.Data)
 		if err != nil {
 			log.Fatalf("Failed to unpack Transfer event: %v", err)
 		}
-		var data transferEvent
-		err = abiCtx.Transfer.arg.Copy(&data, values)
+		var data exchange.TransferEvent
+		err = abiCtx.Transfer.Arg.Copy(&data, values)
 		if err != nil {
 			log.Println(err)
 		}		
 		log.Printf("ws_event Transfer %s Topics %v, data %#v price %f\n", pair.name, logEvt.Topics, data, pair.price())
 	}
-}
-
-type swapEvent struct {
-	Sender     common.Address
-	Amount0In  *big.Int
-	Amount1In  *big.Int
-	Amount0Out *big.Int
-	Amount1Out *big.Int
-	To         common.Address
-}
-
-// json/eth_rlp decode/Unmarshal 都是通过运行时反射匹配字段，必须要大写才能找到字段
-type transferEvent struct {
-	From common.Address
-	To common.Address
-	Value *big.Int
-}
-
-// json/eth_rlp decode/Unmarshal 都是通过运行时反射匹配字段，必须要大写才能找到字段
-type burnEvent struct {
-	Sender common.Address
-	Amount0 *big.Int
-	Amount1 *big.Int
-	To common.Address
-}
-
-//lint:ignore U1000 ignore
-type mintEvent struct {
-	Sender common.Address
-	Amount0 *big.Int
-	Amount1 *big.Int
 }

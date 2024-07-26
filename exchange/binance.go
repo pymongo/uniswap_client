@@ -32,10 +32,15 @@ func (bn *BnBroker) req(method, path string, params, headers map[string]string, 
 	var qs strings.Builder // query_string
 	if params != nil {
 		qs.Grow(64)
+		i := 0
 		for key, value := range params {
+			if i > 0 {
+				qs.WriteByte('&')
+			}
 			qs.WriteString(key)
-			qs.WriteByte('&')
+			qs.WriteByte('=')
 			qs.WriteString(value)
+			i += 1
 		}
 	}
 	if headers == nil {
@@ -46,10 +51,10 @@ func (bn *BnBroker) req(method, path string, params, headers map[string]string, 
 		timeMs := time.Now().UnixMilli()
 		timeMsStr := strconv.FormatInt(timeMs, 10)
 		headers[BnHeaderKey] = bn.key
-		if qs.Len() == 0 {
+		if qs.Len() > 0 {
 			qs.WriteByte('&')
 		}
-		qs.WriteString("timestamp")
+		qs.WriteString("timestamp=")
 		qs.WriteString(timeMsStr)
 		queryString = qs.String()
 		mac := hmac.New(sha256.New, bn.secret)
@@ -102,7 +107,7 @@ type createListenKeyResp struct {
 
 func (bn *BnBroker) createListenKey() error {
 	var resp createListenKeyResp
-	err := bn.req("POST", "userDataStream", nil, map[string]string{BnHeaderKey: bn.key}, false, &resp)
+	err := bn.req("POST", "/api/v3/userDataStream", nil, map[string]string{BnHeaderKey: bn.key}, false, &resp)
 	if err != nil {
 		return err
 	}
@@ -115,7 +120,7 @@ type Empty struct{}
 
 func (bn *BnBroker) renewListenKey() error {
 	var resp Empty
-	err := bn.req("POST", "userDataStream", nil, map[string]string{"": ""}, false, &resp)
+	err := bn.req("PUT", "/api/v3/userDataStream", map[string]string{"listenKey": bn.listenKey}, map[string]string{BnHeaderKey: bn.key}, false, &resp)
 	if err != nil {
 		return err
 	}
@@ -123,8 +128,46 @@ func (bn *BnBroker) renewListenKey() error {
 	return err
 }
 
+// 还有个现货杠杆下单api是 oco 后缀的 ​OCO (One-Cancels-the-Other) 止盈止损单被触发，或限价订单成交或部分成交时，另一个订单则自动撤销
+// type PostMarginOrder struct {
+// 	Symbol string `json:"symbol"`
+// 	Side string `json:"side"`
+// 	// 不需要定义请求结构体，反正生成签名和传输也是用 map[string]string
+// }
+func (bn *BnBroker) PostMarginOrder(p model.PostOrderParams) error {
+	params := map[string]string {
+		"symbol": p.Symbol,
+		"quantity": strconv.FormatFloat(p.Amount, 'f', -1, 64),
+		"sideEffectType": "AUTO_BORROW_REPAY",
+	}
+	if p.Side == model.SideBuy {
+		params["side"] = "BUY"
+	} else {
+		params["side"] = "SELL"
+	}
+	if p.Tif != model.TifMarket {
+		params["type"] = "LIMIT"
+		params["price"] = strconv.FormatFloat(p.Price, 'f', -1, 64)
+		if p.Tif == model.TifGtc {
+			params["timeInForce"] = "GTC"
+		} else {
+			params["timeInForce"] = "IOC"
+		}
+	} else {
+		params["type"] = "MARKET"
+		params["timeInForce"] = "IOC"
+	}
+	var r json.RawMessage
+	err := bn.req("POST", "/sapi/v1/margin/order", params, map[string]string{}, true, &r)
+	if err != nil {
+		return err
+	}
+	log.Println(string(r))
+	return err
+}
+
 const (
-	BnRestUrl   = "https://api.binance.com/api/v3/"
+	BnRestUrl   = "https://api.binance.com"
 	BnWsUrl     = "wss://stream.binance.com:9443/stream"
 	BnHeaderKey = "X-MBX-APIKEY"
 )
