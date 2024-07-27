@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"log"
+	"math"
 	"math/big"
 	"time"
 
@@ -76,6 +77,7 @@ func NewUniBroker(conf *config.Config, bboCh chan model.Bbo) UniBroker {
 	if err != nil {
 		log.Fatalln(err)
 	}
+	// rest.NetworkID()
 	chainId, err := rest.ChainID(context.Background())
 	if err != nil {
 		log.Fatalln(err)
@@ -462,4 +464,19 @@ func (u *UniBroker) queryBalanceGasPrice() error {
 	u.Usdc = usdcF64 / 1e6
 	u.gasPrice = gasPrice.ToInt()
 	return nil
+}
+
+func (u *UniBroker) TransferEth(amountEther float64) error {
+	to := u.conf.DepositAddr
+	amountWei := new(big.Int).SetInt64(int64(math.Floor(amountEther * 1e18)))
+	gasLimit := uint64(21000) // Gas limit for standard ETH transfer
+	tx := types.NewTransaction(u.nonce, to, amountWei, gasLimit, u.gasPrice, nil)
+    signedTx, err := types.SignTx(tx, types.NewEIP155Signer(u.chainId), u.privKey)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	txhash := signedTx.Hash().Hex()
+	log.Printf("transfer %f to %s txhash %s", amountEther, to, txhash)
+	err = u.rest.SendTransaction(context.Background(), signedTx)
+	return err
 }

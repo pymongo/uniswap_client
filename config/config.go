@@ -16,6 +16,7 @@ type Config struct {
 	UsdcAddr common.Address
 	RpcUrl string
 	WsUrl string `json:"omitempty"`
+	DepositAddr common.Address
 }
 
 func NewConfig() Config {
