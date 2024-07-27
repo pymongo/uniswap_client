@@ -15,7 +15,7 @@ func main() {
 	bn := exchange.NewBnBroker(conf.Key, conf.Secret, ch)
 	// bn.Mainloop([]string{"ftmusdc"})
 	err := bn.PostMarginOrder(model.PostOrderParams{
-		Symbol: "FTMUSDC",
+		Symbol: "FTMUSDT", // FTMUSDC 没有现货杠杆
 		Side:   model.SideSell,
 		Price:  0.5,
 		Amount: 10,

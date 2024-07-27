@@ -9,5 +9,5 @@ import (
 func main() {
 	log.SetFlags(log.Lmicroseconds | log.Lshortfile)
 	conf := config.NewConfig()
-	exchange.NewUniBroker(conf.PrivateKey, nil)	
+	exchange.NewUniBroker(&conf, nil)	
 }

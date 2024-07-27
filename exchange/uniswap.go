@@ -1,6 +1,7 @@
 package exchange
 
 import (
+	"arbitrage/config"
 	"arbitrage/model"
 	"context"
 	"crypto/ecdsa"
@@ -19,15 +20,12 @@ import (
 	"github.com/tyler-smith/go-bip39"
 )
 
-const (
-	rpcUrl  = "https://rpcapi.fantom.network"
-	wsUrl   = "wss://wsapi.fantom.network/" // 不支持 ws 的 rpc 服务商就填空的 url
-	chainId = 250                           // FTM
-)
+// const (
+// 	wsUrl  = "wss://wsapi.fantom.network/" // 不支持 ws 的 rpc 服务商就填空的 url
+// )
 
 var (
 	pairAddr = common.HexToAddress("0x084F933B6401a72291246B5B5eD46218a68773e6")
-	usdcAddr = common.HexToAddress("0x1B6382DBDEa11d97f24495C9A90b7c88469134a4") // axlUsdc
 	// wftmAddr = common.HexToAddress("0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83")
 	weiPerEther    = new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)
 	usdcDecimalMul = new(big.Int).Exp(big.NewInt(10), big.NewInt(6), nil)
@@ -36,13 +34,20 @@ var (
 type UniBroker struct {
 	privKey *ecdsa.PrivateKey
 	addr    common.Address
-	bboCh   chan model.Bbo
+	nonce   uint64
+	Eth     float64 // gas coin
+	Usdc    float64 // USDC or USDT
+	chainId *big.Int
 	rest    *ethclient.Client
+	gasPrice *big.Int
+	conf *config.Config
+	bboCh   chan model.Bbo
 }
 
-func NewUniBroker(key string, bboCh chan model.Bbo) UniBroker {
+func NewUniBroker(conf *config.Config, bboCh chan model.Bbo) UniBroker {
 	var err error
 
+	key := conf.PrivateKey
 	var privateKeyBytes []byte
 	if key[:2] == "0x" || len(key) == 64 {
 		// 不能拿 contains 空格判断是不是助记词，很可能私钥里面就有多个空格 byte
@@ -62,43 +67,19 @@ func NewUniBroker(key string, bboCh chan model.Bbo) UniBroker {
 	publicKey := privateKey.Public().(*ecdsa.PublicKey)
 	address := crypto.PubkeyToAddress(*publicKey)
 
-	rest, err := ethclient.Dial(rpcUrl)
+	rest, err := ethclient.Dial(conf.RpcUrl)
 	if err != nil {
 		log.Fatalln(err)
 	}
 
-	params, err := BalanceOf.Inputs.Pack(address)
+	nonce, err := rest.NonceAt(context.Background(), address, nil)
 	if err != nil {
 		log.Fatalln(err)
 	}
-	msg := ethereum.CallMsg{
-		To: &usdcAddr,
-		// abi.go return append(method.ID, arguments...), nil
-		Data: append(BalanceOf.ID, params...),
-	}
-	resp, err := rest.CallContract(context.Background(), msg, nil)
+	chainId, err := rest.ChainID(context.Background())
 	if err != nil {
 		log.Fatalln(err)
 	}
-	values, err := BalanceOf.Outputs.UnpackValues(resp)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	var usdcBitInt *big.Int
-	err = BalanceOf.Outputs.Copy(&usdcBitInt, values)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	usdcF64, _ := new(big.Float).SetInt(usdcBitInt).Float64()
-	usdc := usdcF64 / 1e6
-	ethWei, err := rest.BalanceAt(context.Background(), address, nil) // nil for the latests block
-	if err != nil {
-		log.Fatalln(err)
-	}
-	ethWeiF64, _ := new(big.Float).SetInt(ethWei).Float64()
-	eth := ethWeiF64 / 1e18
-	log.Println("eth = ", eth, "usdc = ", usdc)
-
 	// blockId, err := rest.BlockNumber(context.Background())
 	// if err != nil {
 	// 	log.Fatalln(err)
@@ -114,20 +95,51 @@ func NewUniBroker(key string, bboCh chan model.Bbo) UniBroker {
 		addr:    address,
 		bboCh:   bboCh,
 		rest:    rest,
+		nonce:   nonce,
+		chainId: chainId,
+		conf: conf,
 	}
 }
 
 func (u *UniBroker) Mainloop() {
-	if len(wsUrl) != 0 {
+	err := u.queryReserves()
+	if err != nil {
+		log.Fatalln(err)
+	}
+	err = u.queryBalanceGasPrice()
+	if err != nil {
+		log.Fatalln(err)
+	}
+	if len(u.conf.WsUrl) != 0 {
 		go func() {
 			log.Println("eth rpc wsUrl exist, subscribe Uniswap log/event")
-			u.subscribeEvents(wsUrl)
+			for {
+				err = u.subscribeEvents(u.conf.WsUrl)
+				if err != nil {
+					log.Println("err", err)
+				}
+				time.Sleep(1 * time.Second)
+			}
 		}()
 	}
-	for {
-		u.queryReserves()
-		time.Sleep(200 * time.Microsecond)
-	}
+	go func() {
+		for {
+			time.Sleep(200 * time.Microsecond)
+			err = u.queryReserves()
+			if err != nil {
+				log.Println("err", err)
+			}
+		}
+	}()
+	go func() {
+		for {
+			time.Sleep(1200 * time.Microsecond)
+			err = u.queryBalanceGasPrice()
+			if err != nil {
+				log.Println("err", err)
+			}
+		}
+	}()
 }
 
 var pairs = map[common.Address]*UniPair{
@@ -227,7 +239,7 @@ func (pair *UniPair) bbo() model.Bbo {
 	}
 }
 
-func (u *UniBroker) queryReserves() {
+func (u *UniBroker) queryReserves() error {
 	methodIdSignature := hexutil.Encode(hexutil.Bytes(GetReserves.ID))
 	batch := make([]rpc.BatchElem, len(pairs))
 	i := 0
@@ -248,7 +260,8 @@ func (u *UniBroker) queryReserves() {
 	}
 	err := u.rest.Client().BatchCall(batch)
 	if err != nil {
-		log.Fatalf("Batch call failed: %v", err)
+		// log.Fatalf("Batch call failed: %v", err)
+		return err
 	}
 	for i, elem := range batch {
 		pairAddress := pairAddresses[i]
@@ -272,9 +285,10 @@ func (u *UniBroker) queryReserves() {
 		// price := pair.price()
 		u.bboCh <- pair.bbo()
 	}
+	return nil
 }
 
-func (u *UniBroker) subscribeEvents(wsUrl string) {
+func (u *UniBroker) subscribeEvents(wsUrl string) error {
 	c, err := rpc.DialWebsocket(context.Background(), wsUrl, "")
 	if err != nil {
 		log.Fatalln(err)
@@ -308,7 +322,8 @@ func (u *UniBroker) subscribeEvents(wsUrl string) {
 	for {
 		select {
 		case err := <-sub.Err():
-			log.Fatalf("Subscription error: %v", err)
+			// log.Fatalf("Subscription error: %v", err)
+			return err
 		case vLog := <-logs:
 			u.handleLog(&eventsAbi, vLog)
 		}
@@ -383,4 +398,55 @@ func (u *UniBroker) handleLog(eventsAbi *PairEventsAbi, logEvt types.Log) {
 		}
 		log.Printf("ws_event Transfer %s Topics %v, data %#v price %f\n", pair.name, logEvt.Topics, data, pair.price())
 	}
+}
+
+func (u *UniBroker) queryBalanceGasPrice() error {
+	batch := make([]rpc.BatchElem, 3)
+
+	var ethBalance hexutil.Big
+	batch[0] = rpc.BatchElem {
+		Method: "eth_getBalance", // BalanceAt
+		Args: []interface{} {
+			u.addr,
+			"latest",
+		},
+		Result: &ethBalance,
+	}
+
+	var usdcBalance hexutil.Big
+	params, err := BalanceOf.Inputs.Pack(u.addr)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	batch[1] = rpc.BatchElem {
+		Method: "eth_call",
+		// https://github.com/ethereum/go-ethereum/pull/15640/files
+		// 用 data 或者 input 都行 data 是后面 rename 成 input 的
+		Args: []interface{} {
+			map[string]hexutil.Bytes {
+				"to":   hexutil.Bytes(u.conf.UsdcAddr.Bytes()),
+				"input": hexutil.Bytes(append(BalanceOf.ID, params...)),
+			},
+			"latest",
+		},
+		Result: &usdcBalance,
+	}
+
+	var gasPrice hexutil.Big
+	batch[2] = rpc.BatchElem {
+		Method: "eth_gasPrice",
+		Result: &gasPrice,
+	}
+	
+	err = u.rest.Client().BatchCall(batch)
+	if err != nil {
+		return err
+	}
+
+	ethF64, _ := ethBalance.ToInt().Float64()
+	u.Eth = ethF64 / 1e18
+	usdcF64, _ := usdcBalance.ToInt().Float64()
+	u.Usdc = usdcF64 / 1e6
+	u.gasPrice = gasPrice.ToInt()
+	return nil
 }

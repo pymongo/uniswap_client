@@ -18,6 +18,12 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+const (
+	BnRestUrl   = "https://api.binance.com"
+	BnWsUrl     = "wss://stream.binance.com:9443/stream"
+	BnHeaderKey = "X-MBX-APIKEY"
+)
+
 //lint:ignore U1000 unused
 type BnBroker struct {
 	key                string
@@ -26,6 +32,8 @@ type BnBroker struct {
 	listenKeyCreatedAt int64
 	bboCh              chan model.Bbo
 	rest               http.Client
+	interestRate       float64
+	Assets             map[string]asset
 }
 
 func (bn *BnBroker) req(method, path string, params, headers map[string]string, auth bool, respVal interface{}) error {
@@ -116,10 +124,8 @@ func (bn *BnBroker) createListenKey() error {
 	return err
 }
 
-type Empty struct{}
-
 func (bn *BnBroker) renewListenKey() error {
-	var resp Empty
+	var resp json.RawMessage
 	err := bn.req("PUT", "/api/v3/userDataStream", map[string]string{"listenKey": bn.listenKey}, map[string]string{BnHeaderKey: bn.key}, false, &resp)
 	if err != nil {
 		return err
@@ -134,6 +140,9 @@ func (bn *BnBroker) renewListenKey() error {
 // 	Side string `json:"side"`
 // 	// 不需要定义请求结构体，反正生成签名和传输也是用 map[string]string
 // }
+
+// FTM借币10开空GTC，没成交撤单后，负债是一小时利息0.00003257
+// FTM借币10开空IOC，没成交撤单后，负债是10FTM+一小时利息(0.00006514-0.00003257)
 func (bn *BnBroker) PostMarginOrder(p model.PostOrderParams) error {
 	params := map[string]string {
 		"symbol": p.Symbol,
@@ -157,6 +166,7 @@ func (bn *BnBroker) PostMarginOrder(p model.PostOrderParams) error {
 		params["type"] = "MARKET"
 		params["timeInForce"] = "IOC"
 	}
+	// IOC 没成交返回 {"symbol":"FTMUSDT","orderId":3432590431,"clientOrderId":"U3vAoKlfhxWPDENJLH58vI","transactTime":1721963358518,"price":"0.5","origQty":"10","executedQty":"0","cummulativeQuoteQty":"0","status":"EXPIRED","timeInForce":"IOC","type":"LIMIT","side":"SELL","fills":[],"marginBuyBorrowAsset":"FTM","marginBuyBorrowAmount":"10","isIsolated":false,"selfTradePreventionMode":"EXPIRE_MAKER"}
 	var r json.RawMessage
 	err := bn.req("POST", "/sapi/v1/margin/order", params, map[string]string{}, true, &r)
 	if err != nil {
@@ -166,11 +176,75 @@ func (bn *BnBroker) PostMarginOrder(p model.PostOrderParams) error {
 	return err
 }
 
-const (
-	BnRestUrl   = "https://api.binance.com"
-	BnWsUrl     = "wss://stream.binance.com:9443/stream"
-	BnHeaderKey = "X-MBX-APIKEY"
-)
+// 还币/借币 没有欠款时调用还钱不会报错，也无事发生
+func (bn *BnBroker) Repay(asset string, amount float64) error {
+	type_ := "REPAY"
+	if amount < 0 {
+		type_ = "BORROW"
+		amount = -amount
+	}
+	params := map[string]string {
+		"type": type_,
+		"asset": asset,
+		"amount": strconv.FormatFloat(amount, 'f', -1, 64),
+	}
+	var r json.RawMessage
+	err := bn.req("POST", "/sapi/v1/margin/borrow-repay", params, map[string]string{}, true, &r)
+	log.Println(string(r))
+	return err
+}
+
+type Interest struct {
+	Asset string
+	NextHourlyInterestRate F64
+}
+
+func (bn *BnBroker) getInterestRate() error {
+	params := map[string]string {
+		"assets": "USDT,USDC,FDUSD,BNB,FTM,CELO",
+		"isIsolated": "FALSE",
+	}
+	var r []Interest
+	err := bn.req("GET", "/sapi/v1/margin/next-hourly-interest-rate", params, map[string]string{}, true, &r)
+	if err != nil {
+		return err
+	}
+	for i := range r {
+		if r[i].Asset == "FTM" {
+
+			break;
+		}
+	}
+	return err
+}
+
+func (bn *BnBroker) getPosition() error {
+	var r marginPos
+	err := bn.req("GET", "/sapi/v1/margin/account", map[string]string{}, map[string]string{}, true, &r)
+	if err != nil {
+		return err
+	}
+	for i := range r.UserAssets {
+		coin := r.UserAssets[i].Asset
+		if coin == "USDC" || coin == "USDT" || coin == "BNB" || coin == "FTM" {
+			bn.Assets[coin] = r.UserAssets[i]
+		}
+	}
+	return err
+}
+
+type marginPos struct {
+	TotalCollateralValueInUSDT F64 `json:"TotalCollateralValueInUSDT"`
+	UserAssets []asset `json:"userAssets"`
+}
+type asset struct {
+	Asset    string `json:"asset,omitempty"`
+	Free     F64    `json:"free,omitempty"`
+	Locked   F64    `json:"locked,omitempty"`
+	Borrow   F64    `json:"borrow,omitempty"`
+	Interest F64    `json:"interest,omitempty"`
+	NetAsset F64    `json:"NetAsset,omitempty"`
+}
 
 type F64 float64
 
@@ -251,18 +325,59 @@ func NewBnBroker(key, secret string, bboCh chan model.Bbo) BnBroker {
 			// Transport: &http.Transport
 			Timeout: 5 * time.Second,
 		},
+		Assets: map[string]asset{},
 		bboCh: bboCh,
 	}
 }
 func (bn *BnBroker) Mainloop(symbols []string) {
-	if len(bn.key) == 0 {
-		return
+	if len(bn.key) != 0 {
+		err := bn.createListenKey()
+		if err != nil {
+			log.Fatalln(err)
+		}
+		// TODO private ws
 	}
-	err := bn.createListenKey()
+	err := bn.getPosition()
 	if err != nil {
 		log.Fatalln(err)
 	}
-	// TODO private ws
+	// err = bn.getInterestRate()
+	// if err != nil {
+	// 	log.Fatalln(err)
+	// }
+	// bn.Repay("FTM", 1)
+	// if err != nil {
+	// 	log.Fatalln(err)
+	// }
+	go func() {
+		err = bn.publicWsMainLoop(symbols)
+		if err != nil {
+			log.Println("bn.publicWsMainLoop", err)
+		}
+		time.Sleep(1 * time.Second)
+	}()
+}
+
+func publicWsUrl(symbols []string) string {
+	var builder strings.Builder
+	builder.Grow(64)
+	builder.WriteString(BnWsUrl)
+	builder.WriteString("?streams=")
+	for i, symbol := range symbols {
+		if i != 0 {
+			builder.WriteByte('/')
+		}
+		builder.WriteString(symbol)
+		builder.WriteString("@bookTicker") // websocket 库会自动做 url escape
+		// builder.WriteByte('/')
+		// builder.WriteString(symbol)
+		// builder.WriteString("@depth5@100ms")
+	}
+	wsUrl := builder.String()
+	return wsUrl
+}
+
+func (bn *BnBroker) publicWsMainLoop(symbols []string) error {
 	dialer := websocket.DefaultDialer
 	dialer.EnableCompression = true
 	conn, _, err := dialer.Dial(publicWsUrl(symbols), nil)
@@ -271,9 +386,11 @@ func (bn *BnBroker) Mainloop(symbols []string) {
 	}
 	defer conn.Close()
 
-loop:
 	for {
 		opcode, msg, err := conn.ReadMessage()
+		if err != nil {
+			return err
+		}
 		// 每个 branch 默认会 break 除非 fallthrough
 		switch opcode {
 		case websocket.TextMessage:
@@ -302,7 +419,7 @@ loop:
 		case websocket.PingMessage:
 			err = conn.WriteMessage(websocket.PongMessage, msg)
 			if err != nil {
-				log.Fatalln(err)
+				return err
 			}
 		case websocket.PongMessage:
 			log.Println("recv pong", string(msg))
@@ -311,28 +428,5 @@ loop:
 		default:
 			log.Println("unhandle opcode", opcode, string(msg))
 		}
-		if err != nil {
-			log.Fatal("Read error:", err)
-			break loop
-		}
 	}
-}
-
-func publicWsUrl(symbols []string) string {
-	var builder strings.Builder
-	builder.Grow(64)
-	builder.WriteString(BnWsUrl)
-	builder.WriteString("?streams=")
-	for i, symbol := range symbols {
-		if i != 0 {
-			builder.WriteByte('/')
-		}
-		builder.WriteString(symbol)
-		builder.WriteString("@bookTicker") // websocket 库会自动做 url escape
-		// builder.WriteByte('/')
-		// builder.WriteString(symbol)
-		// builder.WriteString("@depth5@100ms")
-	}
-	wsUrl := builder.String()
-	return wsUrl
 }

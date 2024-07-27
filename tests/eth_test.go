@@ -4,6 +4,7 @@ import (
 	"arbitrage/config"
 	"arbitrage/exchange"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -88,9 +89,11 @@ func TestConfig(t *testing.T) {
 	log.Println(conf.Key)
 }
 
+// go test -run TestUni arbitrage/tests
 func TestUni(t *testing.T) {
 	log.SetFlags(log.Lmicroseconds | log.Lshortfile)
 	os.Chdir("..")
 	conf := config.NewConfig()
-	exchange.NewUniBroker(conf.PrivateKey, nil)
+	fmt.Printf("%#v", conf)
+	exchange.NewUniBroker(&conf, nil)
 }

@@ -21,22 +21,32 @@ type HedgePair struct {
 func main() {
 	log.SetFlags(log.Lmicroseconds | log.Lshortfile)
 	conf := config.NewConfig()
-	leadBboCh := make(chan model.Bbo, 128)
-	lagBboCh := make(chan model.Bbo, 128)
-	lead := exchange.NewUniBroker(conf.PrivateKey, leadBboCh)
-	lag := exchange.NewBnBroker(conf.Key, conf.Secret, lagBboCh)
-	go lead.Mainloop()
-	go lag.Mainloop([]string{"ftmusdt"})
-	leadPrice := 0.
-	lagPrice := 0.
+	// log.Printf("%#v", conf)
+	uniBboCh := make(chan model.Bbo, 128)
+	bnBboCh := make(chan model.Bbo, 128)
+	uni := exchange.NewUniBroker(&conf, uniBboCh)
+	bn := exchange.NewBnBroker(conf.Key, conf.Secret, bnBboCh)
+	uni.Mainloop()
+	bn.Mainloop([]string{"ftmusdt"})
+	
+	log.Printf("%#v\n", bn.Assets)
+
+	uniPrice := 0.
+	bnPrice := 0.
 	for {
 		select {
-		case leadBbo := <-leadBboCh:
-			leadPrice = leadBbo.Ask
-			calcPriceSpread(leadPrice, lagPrice)
-		case lagBbo := <-lagBboCh:
-			lagPrice = lagBbo.Ask
-			calcPriceSpread(leadPrice, lagPrice)
+		case uniBbo := <-uniBboCh:
+			uniPrice = uniBbo.Bid
+			if bnPrice == 0 {
+				continue
+			}
+			calcPriceSpread(uniPrice, bnPrice)
+		case bnBbo := <-bnBboCh:
+			bnPrice = bnBbo.Ask
+			if uniPrice == 0 {
+				continue
+			}
+			calcPriceSpread(uniPrice, bnPrice)
 		}
 	}
 }
