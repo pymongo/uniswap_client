@@ -29,7 +29,7 @@ func main() {
 	uni.Mainloop()
 	bn.Mainloop([]string{"ftmusdt"})
 	
-	log.Printf("%#v\n", bn.Assets)
+	// log.Printf("%#v\n", bn.Assets)
 
 	uniPrice := 0.
 	bnPrice := 0.

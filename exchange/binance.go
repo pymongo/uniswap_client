@@ -230,6 +230,7 @@ func (bn *BnBroker) getPosition() error {
 			bn.Assets[coin] = r.UserAssets[i]
 		}
 	}
+	log.Printf("币安资产 %f$, %#v", r.TotalCollateralValueInUSDT, bn.Assets)
 	return err
 }
 
@@ -429,4 +430,9 @@ func (bn *BnBroker) publicWsMainLoop(symbols []string) error {
 			log.Println("unhandle opcode", opcode, string(msg))
 		}
 	}
+}
+
+func (bn *BnBroker) lastPrice(symbol string) {
+	// if no symbol params prices for all symbols will be returned in an array
+	// bn.req("GET", "/api/v3/ticker/price")
 }

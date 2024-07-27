@@ -122,9 +122,10 @@ func (u *UniBroker) Mainloop() {
 			}
 		}()
 	}
+	log.Printf("链上资产 %fUSDC %fETH", u.Usdc, u.Eth)
 	go func() {
 		for {
-			time.Sleep(200 * time.Microsecond)
+			time.Sleep(250 * time.Microsecond)
 			err = u.queryReserves()
 			if err != nil {
 				log.Println("err", err)
@@ -413,18 +414,22 @@ func (u *UniBroker) queryBalanceGasPrice() error {
 		Result: &ethBalance,
 	}
 
-	var usdcBalance hexutil.Big
-	params, err := BalanceOf.Inputs.Pack(u.addr)
+	// hex number with leading zero digits
+	// hexutil.Big 要求返回值没有 padding left 的零，eth 标准接口 gasPrice 这些都没有填充0
+	var usdcBalance hexutil.Bytes
+	params, err := BalanceOf.Inputs.Pack(u.addr) // 32byte addr with 0 padding left
+	// log.Println(len(params), len(u.addr))
 	if err != nil {
 		log.Fatalln(err)
 	}
+	// log.Println(u.conf.UsdcAddr, hexutil.Encode(append(BalanceOf.ID, params...)))
 	batch[1] = rpc.BatchElem {
 		Method: "eth_call",
 		// https://github.com/ethereum/go-ethereum/pull/15640/files
 		// 用 data 或者 input 都行 data 是后面 rename 成 input 的
 		Args: []interface{} {
 			map[string]hexutil.Bytes {
-				"to":   hexutil.Bytes(u.conf.UsdcAddr.Bytes()),
+				"to":   u.conf.UsdcAddr.Bytes(),
 				"input": hexutil.Bytes(append(BalanceOf.ID, params...)),
 			},
 			"latest",
@@ -442,10 +447,18 @@ func (u *UniBroker) queryBalanceGasPrice() error {
 	if err != nil {
 		return err
 	}
+	for i, elem := range batch {
+		if elem.Error != nil {
+			log.Printf("rpc BatchCall i=%d err=%#v", i, elem.Error)
+			return elem.Error
+		}
+	}
 
 	ethF64, _ := ethBalance.ToInt().Float64()
 	u.Eth = ethF64 / 1e18
-	usdcF64, _ := usdcBalance.ToInt().Float64()
+	usdcF64, _ :=  new(big.Int).SetBytes(usdcBalance).Float64()
+	// gasPriceGwei, _ := gasPrice.ToInt().Float64()
+	// log.Printf("eth %f, usdc %f, gasPrice %f gWei\n", ethF64, usdcF64, gasPriceGwei / 1e9)
 	u.Usdc = usdcF64 / 1e6
 	u.gasPrice = gasPrice.ToInt()
 	return nil

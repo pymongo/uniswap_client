@@ -53,7 +53,6 @@ type MintEvent struct {
 	Amount0 *big.Int
 	Amount1 *big.Int
 }
-
 type EventAbi struct {
 	Arg abi.Arguments
 	Id  common.Hash
