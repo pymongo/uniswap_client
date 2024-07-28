@@ -478,5 +478,9 @@ func (u *UniBroker) TransferEth(amountEther float64) error {
 	txhash := signedTx.Hash().Hex()
 	log.Printf("transfer %f to %s txhash %s", amountEther, to, txhash)
 	err = u.rest.SendTransaction(context.Background(), signedTx)
+	if err != nil {
+		u.nonce += 1
+	}
+	// 
 	return err
 }
