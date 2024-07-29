@@ -158,6 +158,8 @@ var Pairs = map[common.Address]*UniPair{
 	PairAddr: {
 		addr:                PairAddr,
 		name:                "axlUSDC/WFTM",
+		token0Addr:          common.HexToAddress("0x1B6382DBDEa11d97f24495C9A90b7c88469134a4"),
+		token1Addr:          common.HexToAddress("0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83"),		
 		decimalsMul0:        usdcDecimalMul,
 		decimalsMul1:        weiPerEther,
 		quoteIsToken1: false,
@@ -209,8 +211,8 @@ func mnemonic2PrivateKey(mnemonic string, slipp44CoinType uint32) []byte {
 type UniPair struct {
 	addr common.Address
 	name string // 只是用于日志打印
-	// token0Addr   common.Address
-	// token1Addr   common.Address
+	token0Addr   common.Address
+	token1Addr   common.Address
 	reserve0            *big.Int
 	reserve1            *big.Int
 	decimalsMul0        *big.Int // e.g. 1e18
@@ -518,6 +520,10 @@ func (u *UniBroker) Swap(pair *UniPair, side model.Side, amount float64) error {
 		baseCcyMul = new(big.Float).SetInt(pair.decimalsMul1)
 	}
 	baseCcyAmount, _ := new(big.Float).Mul(big.NewFloat(amount), baseCcyMul).Int(nil)
+	log.Println("amount", amount, "baseCcyMul", baseCcyMul, "baseCcyAmount", baseCcyAmount)
+	if baseCcyAmount == big.NewInt(0) {
+		log.Fatalln("amount is zero")
+	}
 	if side == model.SideBuy {
 		if pair.quoteIsToken1 {
 			amount0Out = baseCcyAmount
@@ -529,13 +535,15 @@ func (u *UniBroker) Swap(pair *UniPair, side model.Side, amount float64) error {
 		// 卖出 ETH 获得 USDC 的情况复杂点, 要用 x*y=k 公式算出可获得多少 USDC
 		k := new(big.Int).Mul(pair.reserve0, pair.reserve1)
 		if pair.quoteIsToken1 {
-			newBaseReserve := new(big.Int).Sub(pair.reserve0, baseCcyAmount)
+			newBaseReserve := new(big.Int).Add(pair.reserve0, baseCcyAmount)
 			newQuoteReserve := new(big.Int).Div(k, newBaseReserve)
+			log.Println(pair.reserve0, "*", pair.reserve1, "->", newBaseReserve, "*", newQuoteReserve)
 			SellQuoteAmount := new(big.Int).Sub(newQuoteReserve, pair.reserve1)
 			amount1Out = SellQuoteAmount
 		} else {
-			newBaseReserve := new(big.Int).Sub(pair.reserve1, baseCcyAmount)
+			newBaseReserve := new(big.Int).Add(pair.reserve1, baseCcyAmount)
 			newQuoteReserve := new(big.Int).Div(k, newBaseReserve)
+			log.Println(pair.reserve0, "*", pair.reserve1, "->", newQuoteReserve, "*", newBaseReserve)
 			SellQuoteAmount := new(big.Int).Sub(newQuoteReserve, pair.reserve0)
 			amount0Out = SellQuoteAmount
 		}
@@ -569,10 +577,88 @@ func (u *UniBroker) Swap(pair *UniPair, side model.Side, amount float64) error {
 	return err
 }
 
-func (u *UniBroker) RouterBuyEth() {
-	panic("TODO SwapTokensForExactETH")
+func (u *UniBroker) BuyEth(pair *UniPair, amount float64) error {
+	var baseCcyMul *big.Float
+	if pair.quoteIsToken1 {
+		baseCcyMul = new(big.Float).SetInt(pair.decimalsMul0)
+	} else {
+		baseCcyMul = new(big.Float).SetInt(pair.decimalsMul1)
+	}
+	baseCcyAmount, _ := new(big.Float).Mul(big.NewFloat(amount), baseCcyMul).Int(nil)	
+	k := new(big.Int).Mul(pair.reserve0, pair.reserve1)
+	// 计算最大滑点相关 必须设置滑点保护否则怕被MEV夹
+	var amountInMax *big.Int
+	if pair.quoteIsToken1 {
+		newBaseReserve := new(big.Int).Sub(pair.reserve0, baseCcyAmount)
+		newQuoteReserve := new(big.Int).Div(k, newBaseReserve)
+		amountInMax = new(big.Int).Sub(newQuoteReserve, pair.reserve1)
+	} else {
+		newBaseReserve := new(big.Int).Sub(pair.reserve1, baseCcyAmount)
+		newQuoteReserve := new(big.Int).Div(k, newBaseReserve)
+		amountInMax = new(big.Int).Sub(newQuoteReserve, pair.reserve0)
+	}
+
+	routerClient, err := bindings.NewUniswapV2RouterTransactor(pair.addr, u.client)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	opts := bind.TransactOpts{
+		From:  u.addr,
+		Nonce: big.NewInt((int64)(u.nonce)),
+		Signer: func(a common.Address, tx *types.Transaction) (*types.Transaction, error) {
+			signedTx, err := types.SignTx(tx, types.NewEIP155Signer(u.chainId), u.privKey)
+			if err != nil {
+				log.Fatalln(err)
+			}
+			return signedTx, nil
+		},
+		GasPrice:  u.gasPrice,
+		GasLimit:  gasLimit * 8,
+	}
+	path := []common.Address {
+		pair.token0Addr,
+		pair.token1Addr,
+	}
+	deadline := big.NewInt(time.Now().Add(30 * time.Second).Unix())
+	tx, err := routerClient.SwapTokensForExactETH(&opts, baseCcyAmount, amountInMax, path, u.addr, deadline)
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+	receipt, err := bind.WaitMined(context.Background(), u.client, tx)
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+	log.Println(baseCcyAmount, amountInMax, path, u.addr, deadline, receipt.TxHash)
+	if receipt.Status == types.ReceiptStatusFailed {
+		return errors.New("swap tx fail")
+	}
+	u.nonce += 1
+	return nil
 }
 
 func (u *UniBroker) RouterSellEth() {
+	// if side == model.SideBuy {
+	// 	if pair.quoteIsToken1 {
+	// 		newBaseReserve := new(big.Int).Sub(pair.reserve0, baseCcyAmount)
+	// 		newQuoteReserve := new(big.Int).Div(k, newBaseReserve)
+	// 		amountInMax = new(big.Int).Sub(pair.reserve1, newQuoteReserve)
+	// 	} else {
+	// 		newBaseReserve := new(big.Int).Sub(pair.reserve1, baseCcyAmount)
+	// 		newQuoteReserve := new(big.Int).Div(k, newBaseReserve)
+	// 		amountInMax = new(big.Int).Sub(pair.reserve0, newQuoteReserve)
+	// 	}
+	// } else {
+	// 	if pair.quoteIsToken1 {
+	// 		newBaseReserve := new(big.Int).Add(pair.reserve0, baseCcyAmount)
+	// 		newQuoteReserve := new(big.Int).Div(k, newBaseReserve)
+	// 		amountInMax = new(big.Int).Sub(newQuoteReserve, pair.reserve1)
+	// 	} else {
+	// 		newBaseReserve := new(big.Int).Add(pair.reserve1, baseCcyAmount)
+	// 		newQuoteReserve := new(big.Int).Div(k, newBaseReserve)
+	// 		amountInMax = new(big.Int).Sub(newQuoteReserve, pair.reserve0)
+	// 	}	
+	// }	
 	panic("TODO swapExactETHForTokens")
 }
