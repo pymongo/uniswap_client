@@ -101,7 +101,6 @@ func (pair *Pair) priceFloat() float64 {
 	}
 }
 
-
 // https://ethereum.org/en/developers/docs/data-structures-and-encoding/rlp/ unmarshal
 // func (b *Reserves) DecodeRLP(s *rlp.Stream) error {
 // 	panic("haha")
@@ -134,72 +133,73 @@ var pairs = map[common.Address]*Pair{
 	// 	quoteIsStableCoin: false,
 	// },
 	common.HexToAddress("0x084F933B6401a72291246B5B5eD46218a68773e6"): {
-		addr:              common.HexToAddress("0x084F933B6401a72291246B5B5eD46218a68773e6"),
-		name:              "axlUSDC/WFTM",
-		token0Addr:        common.HexToAddress("0x1B6382DBDEa11d97f24495C9A90b7c88469134a4"),
-		token1Addr:        common.HexToAddress("0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83"),
-		decimalsMul0:      usdcDecimalMul,
-		decimalsMul1:      weiPerEther,
+		addr:                common.HexToAddress("0x084F933B6401a72291246B5B5eD46218a68773e6"),
+		name:                "axlUSDC/WFTM",
+		token0Addr:          common.HexToAddress("0x1B6382DBDEa11d97f24495C9A90b7c88469134a4"),
+		token1Addr:          common.HexToAddress("0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83"),
+		decimalsMul0:        usdcDecimalMul,
+		decimalsMul1:        weiPerEther,
 		priceIsQuoteDivBase: false,
 	},
 	common.HexToAddress("0x8dD580271D823CBDC4a1C6153f69Dad594C521Fd"): {
-		addr:              common.HexToAddress("0x8dD580271D823CBDC4a1C6153f69Dad594C521Fd"),
-		name:              "WFTM/lzUSDC", // stargate
-		token0Addr:        common.HexToAddress("0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83"),
-		token1Addr:        common.HexToAddress("0x28a92dde19D9989F39A49905d7C9C2FAc7799bDf "),
-		decimalsMul0:      weiPerEther,
-		decimalsMul1:      usdcDecimalMul,
+		addr:                common.HexToAddress("0x8dD580271D823CBDC4a1C6153f69Dad594C521Fd"),
+		name:                "WFTM/lzUSDC", // stargate
+		token0Addr:          common.HexToAddress("0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83"),
+		token1Addr:          common.HexToAddress("0x28a92dde19D9989F39A49905d7C9C2FAc7799bDf "),
+		decimalsMul0:        weiPerEther,
+		decimalsMul1:        usdcDecimalMul,
 		priceIsQuoteDivBase: true,
 	},
 	common.HexToAddress("0x2D0Ed226891E256d94F1071E2F94FBcDC9060E14"): {
-		addr:              common.HexToAddress("0x2D0Ed226891E256d94F1071E2F94FBcDC9060E14"),
-		name:              "WFTM/USDC.e", // wormhole
-		token0Addr:        common.HexToAddress("0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83"),
-		token1Addr:        common.HexToAddress("0x2F733095B80A04b38b0D10cC884524a3d09b836a"),
-		decimalsMul0:      weiPerEther,
-		decimalsMul1:      usdcDecimalMul,
+		addr:                common.HexToAddress("0x2D0Ed226891E256d94F1071E2F94FBcDC9060E14"),
+		name:                "WFTM/USDC.e", // wormhole
+		token0Addr:          common.HexToAddress("0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83"),
+		token1Addr:          common.HexToAddress("0x2F733095B80A04b38b0D10cC884524a3d09b836a"),
+		decimalsMul0:        weiPerEther,
+		decimalsMul1:        usdcDecimalMul,
 		priceIsQuoteDivBase: true,
 	},
 	common.HexToAddress("0xCE102955A36f148e034C6Fc8Aac0a2ea86f0B281"): {
-		addr:              common.HexToAddress("0xCE102955A36f148e034C6Fc8Aac0a2ea86f0B281"),
-		name:              "axlUSDC/WIGO", // rug, priceF=0.021381 amountF0=0.064873 amountF1=3.034192
-		token0Addr:        common.HexToAddress("0x1B6382DBDEa11d97f24495C9A90b7c88469134a4"),
-		token1Addr:        common.HexToAddress("0xE992bEAb6659BFF447893641A378FbbF031C5bD6"),
-		decimalsMul0:      usdcDecimalMul,
-		decimalsMul1:      weiPerEther,
+		addr:                common.HexToAddress("0xCE102955A36f148e034C6Fc8Aac0a2ea86f0B281"),
+		name:                "axlUSDC/WIGO", // rug, priceF=0.021381 amountF0=0.064873 amountF1=3.034192
+		token0Addr:          common.HexToAddress("0x1B6382DBDEa11d97f24495C9A90b7c88469134a4"),
+		token1Addr:          common.HexToAddress("0xE992bEAb6659BFF447893641A378FbbF031C5bD6"),
+		decimalsMul0:        usdcDecimalMul,
+		decimalsMul1:        weiPerEther,
 		priceIsQuoteDivBase: false,
 	},
 	common.HexToAddress("0x96bDF4d9fb8dB9FcD1E0CA146faBD891f2F1A96d"): {
-		addr:              common.HexToAddress("0x96bDF4d9fb8dB9FcD1E0CA146faBD891f2F1A96d"),
-		name:              "USDC/WIGO",
-		token0Addr:        common.HexToAddress("0x04068DA6C83AFCFA0e13ba15A6696662335D5B75"),
-		token1Addr:        common.HexToAddress("0xE992bEAb6659BFF447893641A378FbbF031C5bD6"),
-		decimalsMul0:      usdcDecimalMul,
-		decimalsMul1:      weiPerEther,
+		addr:                common.HexToAddress("0x96bDF4d9fb8dB9FcD1E0CA146faBD891f2F1A96d"),
+		name:                "USDC/WIGO",
+		token0Addr:          common.HexToAddress("0x04068DA6C83AFCFA0e13ba15A6696662335D5B75"),
+		token1Addr:          common.HexToAddress("0xE992bEAb6659BFF447893641A378FbbF031C5bD6"),
+		decimalsMul0:        usdcDecimalMul,
+		decimalsMul1:        weiPerEther,
 		priceIsQuoteDivBase: false,
 	},
 	common.HexToAddress("0xB66E5c89EbA830B31B3dDcc468dD50b3256737c5"): {
-		addr:              common.HexToAddress("0xB66E5c89EbA830B31B3dDcc468dD50b3256737c5"),
-		name:              "USDC.e/WIGO",
-		decimalsMul0:      usdcDecimalMul,
-		decimalsMul1:      weiPerEther,
+		addr:                common.HexToAddress("0xB66E5c89EbA830B31B3dDcc468dD50b3256737c5"),
+		name:                "USDC.e/WIGO",
+		decimalsMul0:        usdcDecimalMul,
+		decimalsMul1:        weiPerEther,
 		priceIsQuoteDivBase: false,
 	},
 	common.HexToAddress("0xAA606265Df9d29687876B500c18d5DDf1a66a91E"): {
-		addr:              common.HexToAddress("0xAA606265Df9d29687876B500c18d5DDf1a66a91E"),
-		name:              "lzUSDC/WIGO",
-		decimalsMul0:      usdcDecimalMul,
-		decimalsMul1:      weiPerEther,
+		addr:                common.HexToAddress("0xAA606265Df9d29687876B500c18d5DDf1a66a91E"),
+		name:                "lzUSDC/WIGO",
+		decimalsMul0:        usdcDecimalMul,
+		decimalsMul1:        weiPerEther,
 		priceIsQuoteDivBase: false,
 	},
 	common.HexToAddress("0xB66E5c89EbA830B31B3dDcc468dD50b3256737c5"): {
-		addr:              common.HexToAddress("0xB66E5c89EbA830B31B3dDcc468dD50b3256737c5"),
-		name:              "WFTM/WIGO",
-		decimalsMul0:      usdcDecimalMul,
-		decimalsMul1:      weiPerEther,
+		addr:                common.HexToAddress("0xB66E5c89EbA830B31B3dDcc468dD50b3256737c5"),
+		name:                "WFTM/WIGO",
+		decimalsMul0:        usdcDecimalMul,
+		decimalsMul1:        weiPerEther,
 		priceIsQuoteDivBase: false,
-	},	
+	},
 }
+
 func getPairAddr() []common.Address {
 	p := make([]common.Address, len(pairs))
 	i := 0
@@ -209,6 +209,7 @@ func getPairAddr() []common.Address {
 	}
 	return p
 }
+
 var pairAddresses = getPairAddr()
 
 func main() {
@@ -360,11 +361,11 @@ func queryReserves(client *rpc.Client) {
 */
 func subscribeEvents(contract abi.ABI, wsClient *rpc.Client, pairAddresses []common.Address) {
 	client := ethclient.NewClient(wsClient)
-	abiCtx := exchange.PairEventsAbi {
-		Swap: exchange.NewEventAbi(&contract, "Swap"),
-		Sync: exchange.NewEventAbi(&contract, "Sync"),
-		Burn: exchange.NewEventAbi(&contract, "Burn"),
-		Mint: exchange.NewEventAbi(&contract, "Mint"),
+	abiCtx := exchange.PairEventsAbi{
+		Swap:     exchange.NewEventAbi(&contract, "Swap"),
+		Sync:     exchange.NewEventAbi(&contract, "Sync"),
+		Burn:     exchange.NewEventAbi(&contract, "Burn"),
+		Mint:     exchange.NewEventAbi(&contract, "Mint"),
 		Transfer: exchange.NewEventAbi(&contract, "Transfer"),
 	}
 	query := ethereum.FilterQuery{
@@ -385,6 +386,49 @@ func subscribeEvents(contract abi.ABI, wsClient *rpc.Client, pairAddresses []com
 		log.Fatalf("Failed to subscribe to logs: %v", err)
 	}
 	// defer sub.Unsubscribe()
+
+	uniswapClient, err := bindings.NewUniswapV2Pair(pairAddresses[0], client)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	res, err := uniswapClient.GetReserves(nil)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	log.Printf("uniswapClient GetReserves %#v", res)
+	for i := range pairAddresses {
+		uniswapClient, err := bindings.NewUniswapV2Pair(pairAddresses[i], client)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		swapLogs := make(chan *bindings.UniswapV2PairSwap)
+		syncLogs := make(chan *bindings.UniswapV2PairSync)
+		// Subscribe to Swap events
+		swapSub, err := uniswapClient.WatchSwap(nil, swapLogs, nil, nil)
+		if err != nil {
+			log.Fatalf("Failed to subscribe to Swap events: %v", err)
+		}
+		// Subscribe to Sync events
+		syncSub, err := uniswapClient.WatchSync(nil, syncLogs)
+		if err != nil {
+			log.Fatalf("Failed to subscribe to Sync events: %v", err)
+		}
+		go func() {
+			for {
+				select {
+				case swap := <-swapLogs:
+					log.Printf("swapLogs %#v\n", swap)
+				case sync := <-syncLogs:
+					log.Printf("syncLogs %#v\n", sync)
+				case err := <-swapSub.Err():
+					log.Fatalln(err)
+				case err := <-syncSub.Err():
+					log.Fatalln(err)
+				}
+			}
+		}()
+	}
+
 	for {
 		select {
 		case err := <-sub.Err():
@@ -443,7 +487,7 @@ func handleLog(abiCtx *exchange.PairEventsAbi, logEvt types.Log) {
 		err = abiCtx.Burn.Arg.Copy(&data, values)
 		if err != nil {
 			log.Fatalln(err)
-		}		
+		}
 		log.Printf("ws_event Burn %s Topics %v, data %#v price %f\n", pair.name, logEvt.Topics, data, pair.price())
 	case abiCtx.Mint.Id:
 		values, err := abiCtx.Mint.Arg.UnpackValues(logEvt.Data)
@@ -455,7 +499,7 @@ func handleLog(abiCtx *exchange.PairEventsAbi, logEvt types.Log) {
 		if err != nil {
 			// 14:56:18.233005 main.go:497: abi: field value can't be found in the given value
 			log.Fatalln(err, logEvt.Data)
-		}		
+		}
 		log.Printf("ws_event Mint %s Topics %v, data %#v price %f\n", pair.name, logEvt.Topics, data, pair.price())
 	case abiCtx.Transfer.Id:
 		values, err := abiCtx.Transfer.Arg.UnpackValues(logEvt.Data)
@@ -466,7 +510,7 @@ func handleLog(abiCtx *exchange.PairEventsAbi, logEvt types.Log) {
 		err = abiCtx.Transfer.Arg.Copy(&data, values)
 		if err != nil {
 			log.Println(err)
-		}		
+		}
 		log.Printf("ws_event Transfer %s Topics %v, data %#v price %f\n", pair.name, logEvt.Topics, data, pair.price())
 	}
 }

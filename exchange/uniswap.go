@@ -111,17 +111,6 @@ func (u *UniBroker) Mainloop() {
 		log.Fatalln(err)
 	}
 
-	client, err := bindings.NewUniswapV2Pair(pairAddr, u.rest)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	res, err := client.GetReserves(nil)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	log.Printf("%#v", res)
-	// struct { Reserve0 *big.Int; Reserve1 *big.Int; BlockTimestampLast uint32 }{Reserve0:1289013698569, Reserve1:2723525845356213594136586, BlockTimestampLast:0x66a70a7d}
-
 	err = u.queryBalanceGasPrice()
 	if err != nil {
 		log.Fatalln(err)
