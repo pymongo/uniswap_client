@@ -402,13 +402,12 @@ func subscribeEvents(contract abi.ABI, wsClient *rpc.Client, pairAddresses []com
 			log.Fatalln(err)
 		}
 		swapLogs := make(chan *bindings.UniswapV2PairSwap)
-		syncLogs := make(chan *bindings.UniswapV2PairSync)
-		// Subscribe to Swap events
+		// Filter 是 rest 查询事件 uniswapClient.FilterSwap()
 		swapSub, err := uniswapClient.WatchSwap(nil, swapLogs, nil, nil)
 		if err != nil {
 			log.Fatalf("Failed to subscribe to Swap events: %v", err)
 		}
-		// Subscribe to Sync events
+		syncLogs := make(chan *bindings.UniswapV2PairSync)
 		syncSub, err := uniswapClient.WatchSync(nil, syncLogs)
 		if err != nil {
 			log.Fatalf("Failed to subscribe to Sync events: %v", err)

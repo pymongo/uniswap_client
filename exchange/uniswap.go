@@ -26,8 +26,11 @@ import (
 // 	wsUrl  = "wss://wsapi.fantom.network/" // 不支持 ws 的 rpc 服务商就填空的 url
 // )
 
+const (
+	gasLimit = uint64(21000) // Gas limit for standard ETH transfer
+)
 var (
-	pairAddr = common.HexToAddress("0x084F933B6401a72291246B5B5eD46218a68773e6")
+	PairAddr = common.HexToAddress("0x084F933B6401a72291246B5B5eD46218a68773e6")
 	// wftmAddr = common.HexToAddress("0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83")
 	weiPerEther    = new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)
 	usdcDecimalMul = new(big.Int).Exp(big.NewInt(10), big.NewInt(6), nil)
@@ -149,8 +152,8 @@ func (u *UniBroker) Mainloop() {
 }
 
 var pairs = map[common.Address]*UniPair{
-	pairAddr: {
-		addr:                pairAddr,
+	PairAddr: {
+		addr:                PairAddr,
 		name:                "axlUSDC/WFTM",
 		decimalsMul0:        usdcDecimalMul,
 		decimalsMul1:        weiPerEther,
@@ -209,7 +212,7 @@ type UniPair struct {
 	reserve1            *big.Int
 	decimalsMul0        *big.Int // e.g. 1e18
 	decimalsMul1        *big.Int
-	priceIsQuoteDivBase bool
+	priceIsQuoteDivBase bool // e.g. USDC/ETH is false
 }
 
 func (pair *UniPair) amount0() float64 {
@@ -427,7 +430,6 @@ func (u *UniBroker) queryBalanceGasPrice() error {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	// log.Println(u.conf.UsdcAddr, hexutil.Encode(append(BalanceOf.ID, params...)))
 	batch[1] = rpc.BatchElem {
 		Method: "eth_call",
 		// https://github.com/ethereum/go-ethereum/pull/15640/files
@@ -472,7 +474,6 @@ func (u *UniBroker) queryBalanceGasPrice() error {
 func (u *UniBroker) TransferEth(amountEther float64) error {
 	to := u.conf.DepositAddr
 	amountWei := new(big.Int).SetInt64(int64(math.Floor(amountEther * 1e18)))
-	gasLimit := uint64(21000) // Gas limit for standard ETH transfer
 	tx := types.NewTransaction(u.nonce, to, amountWei, gasLimit, u.gasPrice, nil)
     signedTx, err := types.SignTx(tx, types.NewEIP155Signer(u.chainId), u.privKey)
 	if err != nil {
@@ -484,6 +485,62 @@ func (u *UniBroker) TransferEth(amountEther float64) error {
 	if err != nil {
 		u.nonce += 1
 	}
-	// 
 	return err
+}
+
+// can you give a example for USDC/ETH UniswapV2Pair contract eth client to sell 0.001 ETH using golang interact with IUniswapV2Pair smart contract with swap abi?
+/*
+## IUniswapV2Pair swap Inputs 假设交易对是 ETH/USDC
+- amount0Out 100 买入100 wei ETH
+- amount1Out 0
+- to 接收 ETH 的地址，一般填自己地址
+- 任意的附加数据（calldata）在某些情况下用于 flash swaps。如果包含数据，则可能会触发更多复杂的操作，比如在执行完 swap 后立即调用接收者的合约以处理闪电贷逻辑
+*/
+func (u *UniBroker) Swap(pair *UniPair, side model.Side, amount float64) error {
+	amount0Out := big.NewInt(0)
+	amount1Out := big.NewInt(0)
+	if side == model.SideBuy {
+		if pair.priceIsQuoteDivBase {
+			mul := new(big.Float).SetInt(pair.decimalsMul0)
+			new(big.Float).Mul(big.NewFloat(amount), mul).Int(amount0Out)
+		} else {
+			mul := new(big.Float).SetInt(pair.decimalsMul1)
+			new(big.Float).Mul(big.NewFloat(amount), mul).Int(amount1Out)
+		}
+	} else {
+		if pair.priceIsQuoteDivBase {
+			mul := new(big.Float).SetInt(pair.decimalsMul1)
+			new(big.Float).Mul(big.NewFloat(amount), mul).Int(amount1Out)
+		} else {
+			mul := new(big.Float).SetInt(pair.decimalsMul0)
+			new(big.Float).Mul(big.NewFloat(amount), mul).Int(amount0Out)
+		}
+	}
+	args, err := Swap.Inputs.Pack(amount0Out, amount1Out, u.addr, [0]byte{})
+	if err != nil {
+		log.Fatalln(err)
+	}
+	data := make([]byte, 4 + len(args))
+	copy(data, Swap.ID)
+	copy(data[4:], args)
+	tx := types.NewTransaction(u.nonce, pair.addr, big.NewInt(0), gasLimit, u.gasPrice, data)
+    signedTx, err := types.SignTx(tx, types.NewEIP155Signer(u.chainId), u.privKey)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	txhash := signedTx.Hash().Hex()
+	log.Printf("swap %s %#v amount=%f amount0Out=%d amount0Out=%d txhash %s", pair.name, side, amount, amount0Out, amount1Out, txhash)
+	err = u.rest.SendTransaction(context.Background(), signedTx)
+	if err != nil {
+		u.nonce += 1
+	}
+	return err
+}
+
+func (u *UniBroker) RouterBuyEth() {
+	panic("TODO SwapTokensForExactETH")
+}
+
+func (u *UniBroker) RouterSellEth() {
+	panic("TODO swapExactETHForTokens")
 }

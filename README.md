@@ -25,7 +25,10 @@ op-bindings/bindgen/utils.go
 不加 --type 参数的话，所有结构体命名都是 包名 也就是 Bindings 这样会冲突
 
 ```
+abigen --abi exchange/bindings/uniswapv2_router.abi --out exchange/bindings/uniswapv2_router.go --type UniswapV2Router --pkg bindings
+abigen --abi exchange/bindings/uniswapv2_factory.abi --out exchange/bindings/uniswapv2_factory.go --type UniswapV2Factory --pkg bindings
 abigen --abi exchange/bindings/uniswapv2_pair.abi --out exchange/bindings/uniswapv2_pair.go --type UniswapV2Pair --pkg bindings
+
 abigen --abi exchange/bindings/erc20.abi --out exchange/bindings/erc20.go --type Erc20 --pkg bindings
 ```
 

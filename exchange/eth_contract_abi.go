@@ -1,7 +1,7 @@
 package exchange
 
 import (
-	_ "embed"
+	"arbitrage/exchange/bindings"
 	"math/big"
 	"strings"
 
@@ -11,15 +11,13 @@ import (
 
 // go 文件名命名规范都是 snake_case 例如 go 源码的 cgo_disabled.go
 
-//go:embed bindings/uniswapv2_pair.abi
-var IUniswapV2PairAbiStr string
-//go:embed bindings/erc20.abi
-var erc20AbiStr string
-
-var PairAbi, _ = abi.JSON(strings.NewReader(IUniswapV2PairAbiStr))
-var Erc20Abi, _ = abi.JSON(strings.NewReader(erc20AbiStr))
+// go:embed bindings/uniswapv2_pair.abi
+// var IUniswapV2PairAbiStr string
+var PairAbi, _ = abi.JSON(strings.NewReader(bindings.UniswapV2PairMetaData.ABI))
+var Erc20Abi, _ = abi.JSON(strings.NewReader(bindings.Erc20MetaData.ABI))
 var BalanceOf = Erc20Abi.Methods["balanceOf"]
 var GetReserves = PairAbi.Methods["getReserves"]
+var Swap = PairAbi.Methods["swap"]
 
 // json/eth_rlp decode/Unmarshal 都是通过运行时反射匹配字段，必须要大写才能找到字段 abi package uses reflection to match the ABI event parameters with struct fields by name.
 type GetReservesOutput struct {
