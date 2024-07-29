@@ -2,6 +2,7 @@ package main
 
 import (
 	"arbitrage/exchange"
+	"arbitrage/exchange/bindings"
 	"context"
 	_ "embed"
 	"log"
@@ -409,7 +410,7 @@ func handleLog(abiCtx *exchange.PairEventsAbi, logEvt types.Log) {
 		if err != nil {
 			log.Fatalf("Failed to unpack Sync event: %v", err)
 		}
-		var reserve exchange.SyncEvent
+		var reserve bindings.UniswapV2PairSync
 		err = abiCtx.Sync.Arg.Copy(&reserve, values)
 		if err != nil {
 			log.Fatalln(err)
@@ -422,7 +423,7 @@ func handleLog(abiCtx *exchange.PairEventsAbi, logEvt types.Log) {
 		if err != nil {
 			log.Fatalf("Failed to unpack Swap event: %v", err)
 		}
-		var swap exchange.SwapEvent
+		var swap bindings.UniswapV2PairSwap
 		err = abiCtx.Swap.Arg.Copy(&swap, values)
 		if err != nil {
 			log.Fatalln(err)
@@ -438,7 +439,7 @@ func handleLog(abiCtx *exchange.PairEventsAbi, logEvt types.Log) {
 		if err != nil {
 			log.Fatalf("Failed to unpack Burn event: %v", err)
 		}
-		var data exchange.BurnEvent
+		var data bindings.UniswapV2PairBurn
 		err = abiCtx.Burn.Arg.Copy(&data, values)
 		if err != nil {
 			log.Fatalln(err)
@@ -449,7 +450,7 @@ func handleLog(abiCtx *exchange.PairEventsAbi, logEvt types.Log) {
 		if err != nil {
 			log.Fatalf("Failed to unpack Mint event: %v", err)
 		}
-		var data exchange.MintEvent
+		var data bindings.UniswapV2PairMint
 		err = abiCtx.Mint.Arg.Copy(&data, values)
 		if err != nil {
 			// 14:56:18.233005 main.go:497: abi: field value can't be found in the given value
@@ -461,7 +462,7 @@ func handleLog(abiCtx *exchange.PairEventsAbi, logEvt types.Log) {
 		if err != nil {
 			log.Fatalf("Failed to unpack Transfer event: %v", err)
 		}
-		var data exchange.TransferEvent
+		var data bindings.UniswapV2PairTransfer
 		err = abiCtx.Transfer.Arg.Copy(&data, values)
 		if err != nil {
 			log.Println(err)

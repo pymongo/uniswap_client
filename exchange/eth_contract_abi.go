@@ -25,34 +25,6 @@ type GetReservesOutput struct {
 	// 这个字段虽然不用，但也必须定义，否则会报错 abi: field _blockTimestampLast can't be found in the given value
 	BlockTimestampLast uint32
 }
-type SyncEvent struct {
-	Reserve0 *big.Int
-	Reserve1 *big.Int
-}
-type SwapEvent struct {
-	Sender     common.Address
-	Amount0In  *big.Int
-	Amount1In  *big.Int
-	Amount0Out *big.Int
-	Amount1Out *big.Int
-	To         common.Address
-}
-type TransferEvent struct {
-	From  common.Address
-	To    common.Address
-	Value *big.Int
-}
-type BurnEvent struct {
-	Sender  common.Address
-	Amount0 *big.Int
-	Amount1 *big.Int
-	To      common.Address
-}
-type MintEvent struct {
-	Sender  common.Address
-	Amount0 *big.Int
-	Amount1 *big.Int
-}
 type EventAbi struct {
 	Arg abi.Arguments
 	Id  common.Hash

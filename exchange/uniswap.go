@@ -2,6 +2,7 @@ package exchange
 
 import (
 	"arbitrage/config"
+	"arbitrage/exchange/bindings"
 	"arbitrage/model"
 	"context"
 	"crypto/ecdsa"
@@ -61,6 +62,7 @@ func NewUniBroker(conf *config.Config, bboCh chan model.Bbo) UniBroker {
 	}
 
 	privateKey, err := crypto.ToECDSA(privateKeyBytes)
+	// privateKey = crypto.ToECDSAUnsafe(privateKeyBytes)
 	if err != nil {
 		log.Fatalf("Failed to convert to ECDSA private key: %v", err)
 	}
@@ -108,6 +110,18 @@ func (u *UniBroker) Mainloop() {
 	if err != nil {
 		log.Fatalln(err)
 	}
+
+	client, err := bindings.NewUniswapV2Pair(pairAddr, u.rest)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	res, err := client.GetReserves(nil)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	log.Printf("%#v", res)
+	// struct { Reserve0 *big.Int; Reserve1 *big.Int; BlockTimestampLast uint32 }{Reserve0:1289013698569, Reserve1:2723525845356213594136586, BlockTimestampLast:0x66a70a7d}
+
 	err = u.queryBalanceGasPrice()
 	if err != nil {
 		log.Fatalln(err)
@@ -341,7 +355,7 @@ func (u *UniBroker) handleLog(eventsAbi *PairEventsAbi, logEvt types.Log) {
 		if err != nil {
 			log.Fatalf("Failed to unpack Sync event: %v", err)
 		}
-		var reserve SyncEvent
+		var reserve bindings.UniswapV2PairSync
 		err = eventsAbi.Sync.Arg.Copy(&reserve, values)
 		if err != nil {
 			log.Fatalln(err)
@@ -355,7 +369,7 @@ func (u *UniBroker) handleLog(eventsAbi *PairEventsAbi, logEvt types.Log) {
 		if err != nil {
 			log.Fatalf("Failed to unpack Swap event: %v", err)
 		}
-		var swap SwapEvent
+		var swap bindings.UniswapV2PairSwap
 		err = eventsAbi.Swap.Arg.Copy(&swap, values)
 		if err != nil {
 			log.Fatalln(err)
@@ -371,7 +385,7 @@ func (u *UniBroker) handleLog(eventsAbi *PairEventsAbi, logEvt types.Log) {
 		if err != nil {
 			log.Fatalf("Failed to unpack Burn event: %v", err)
 		}
-		var data BurnEvent
+		var data bindings.UniswapV2PairBurn
 		err = eventsAbi.Burn.Arg.Copy(&data, values)
 		if err != nil {
 			log.Fatalln(err)
@@ -382,7 +396,7 @@ func (u *UniBroker) handleLog(eventsAbi *PairEventsAbi, logEvt types.Log) {
 		if err != nil {
 			log.Fatalf("Failed to unpack Mint event: %v", err)
 		}
-		var data MintEvent
+		var data bindings.UniswapV2PairMint
 		err = eventsAbi.Mint.Arg.Copy(&data, values)
 		if err != nil {
 			// 14:56:18.233005 main.go:497: abi: field value can't be found in the given value
@@ -394,7 +408,7 @@ func (u *UniBroker) handleLog(eventsAbi *PairEventsAbi, logEvt types.Log) {
 		if err != nil {
 			log.Fatalf("Failed to unpack Transfer event: %v", err)
 		}
-		var data TransferEvent
+		var data bindings.UniswapV2PairTransfer
 		err = eventsAbi.Transfer.Arg.Copy(&data, values)
 		if err != nil {
 			log.Println(err)
