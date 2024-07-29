@@ -6,12 +6,14 @@ import (
 	"arbitrage/model"
 	"context"
 	"crypto/ecdsa"
+	"errors"
 	"log"
 	"math"
 	"math/big"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -43,7 +45,7 @@ type UniBroker struct {
 	Eth     float64 // gas coin
 	Usdc    float64 // USDC or USDT
 	chainId *big.Int
-	rest    *ethclient.Client
+	client    *ethclient.Client
 	gasPrice *big.Int
 	conf *config.Config
 	bboCh   chan model.Bbo
@@ -102,7 +104,7 @@ func NewUniBroker(conf *config.Config, bboCh chan model.Bbo) UniBroker {
 		privKey: privateKey,
 		addr:    address,
 		bboCh:   bboCh,
-		rest:    rest,
+		client:    rest,
 		nonce:   nonce,
 		chainId: chainId,
 		conf: conf,
@@ -158,7 +160,7 @@ var Pairs = map[common.Address]*UniPair{
 		name:                "axlUSDC/WFTM",
 		decimalsMul0:        usdcDecimalMul,
 		decimalsMul1:        weiPerEther,
-		priceIsQuoteDivBase: false,
+		quoteIsToken1: false,
 	},
 }
 
@@ -213,7 +215,7 @@ type UniPair struct {
 	reserve1            *big.Int
 	decimalsMul0        *big.Int // e.g. 1e18
 	decimalsMul1        *big.Int
-	priceIsQuoteDivBase bool // e.g. USDC/ETH is false
+	quoteIsToken1 bool // e.g. USDC/ETH is false
 }
 
 func (pair *UniPair) amount0() float64 {
@@ -234,7 +236,7 @@ func (pair *UniPair) price() float64 {
 	amount0 := pair.amount0()
 	amount1 := pair.amount1()
 
-	if pair.priceIsQuoteDivBase {
+	if pair.quoteIsToken1 {
 		return amount1 / amount0
 	} else {
 		return amount0 / amount1
@@ -268,7 +270,7 @@ func (u *UniBroker) queryReserves() error {
 		}
 		i++
 	}
-	err := u.rest.Client().BatchCall(batch)
+	err := u.client.Client().BatchCall(batch)
 	if err != nil {
 		// log.Fatalf("Batch call failed: %v", err)
 		return err
@@ -451,7 +453,7 @@ func (u *UniBroker) queryBalanceGasPrice() error {
 		Result: &gasPrice,
 	}
 	
-	err = u.rest.Client().BatchCall(batch)
+	err = u.client.Client().BatchCall(batch)
 	if err != nil {
 		return err
 	}
@@ -480,12 +482,20 @@ func (u *UniBroker) TransferEth(amountEther float64) error {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	txhash := signedTx.Hash().Hex()
-	log.Printf("transfer %f to %s txhash %s", amountEther, to, txhash)
-	err = u.rest.SendTransaction(context.Background(), signedTx)
+	// txhash := signedTx.Hash().Hex()
+	err = u.client.SendTransaction(context.Background(), signedTx)
 	if err != nil {
-		u.nonce += 1
+		return err
 	}
+	receipt, err := bind.WaitMined(context.Background(), u.client, signedTx)
+	if err != nil {
+		return err
+	}
+	log.Printf("transfer %f to %s receipt %#v", amountEther, to, receipt)
+	if receipt.Status == types.ReceiptStatusFailed {
+		return errors.New("TransferEth tx fail")
+	}
+	u.nonce += 1
 	return err
 }
 
@@ -497,29 +507,42 @@ func (u *UniBroker) TransferEth(amountEther float64) error {
 - to 接收 ETH 的地址，一般填自己地址
 - 任意的附加数据（calldata）在某些情况下用于 flash swaps。如果包含数据，则可能会触发更多复杂的操作，比如在执行完 swap 后立即调用接收者的合约以处理闪电贷逻辑
 */
+// side 买卖操作 针对的是 base currency
 func (u *UniBroker) Swap(pair *UniPair, side model.Side, amount float64) error {
 	amount0Out := big.NewInt(0)
 	amount1Out := big.NewInt(0)
+	var baseCcyMul *big.Float
+	if pair.quoteIsToken1 {
+		baseCcyMul = new(big.Float).SetInt(pair.decimalsMul0)
+	} else {
+		baseCcyMul = new(big.Float).SetInt(pair.decimalsMul1)
+	}
+	baseCcyAmount, _ := new(big.Float).Mul(big.NewFloat(amount), baseCcyMul).Int(nil)
 	if side == model.SideBuy {
-		if pair.priceIsQuoteDivBase {
-			mul := new(big.Float).SetInt(pair.decimalsMul0)
-			new(big.Float).Mul(big.NewFloat(amount), mul).Int(amount0Out)
+		if pair.quoteIsToken1 {
+			amount0Out = baseCcyAmount
 		} else {
-			mul := new(big.Float).SetInt(pair.decimalsMul1)
-			new(big.Float).Mul(big.NewFloat(amount), mul).Int(amount1Out)
+			amount1Out = baseCcyAmount
 		}
 	} else {
-		if pair.priceIsQuoteDivBase {
-			mul := new(big.Float).SetInt(pair.decimalsMul1)
-			new(big.Float).Mul(big.NewFloat(amount), mul).Int(amount1Out)
+		// https://ftmscan.com/tx/0xd429b9a74d35f6d8a1c3dcfc455843afaf675c31454d5b01d47a3e2e11b1e7d3
+		// 卖出 ETH 获得 USDC 的情况复杂点, 要用 x*y=k 公式算出可获得多少 USDC
+		k := new(big.Int).Mul(pair.reserve0, pair.reserve1)
+		if pair.quoteIsToken1 {
+			newBaseReserve := new(big.Int).Sub(pair.reserve0, baseCcyAmount)
+			newQuoteReserve := new(big.Int).Div(k, newBaseReserve)
+			SellQuoteAmount := new(big.Int).Sub(newQuoteReserve, pair.reserve1)
+			amount1Out = SellQuoteAmount
 		} else {
-			mul := new(big.Float).SetInt(pair.decimalsMul0)
-			new(big.Float).Mul(big.NewFloat(amount), mul).Int(amount0Out)
+			newBaseReserve := new(big.Int).Sub(pair.reserve1, baseCcyAmount)
+			newQuoteReserve := new(big.Int).Div(k, newBaseReserve)
+			SellQuoteAmount := new(big.Int).Sub(newQuoteReserve, pair.reserve0)
+			amount0Out = SellQuoteAmount
 		}
 	}
 	args, err := Swap.Inputs.Pack(amount0Out, amount1Out, u.addr, []byte{})
 	if err != nil {
-		log.Fatalln(err)
+		log.Fatalln(err)	
 	}
 	data := make([]byte, 4 + len(args))
 	copy(data, Swap.ID)
@@ -529,12 +552,20 @@ func (u *UniBroker) Swap(pair *UniPair, side model.Side, amount float64) error {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	txhash := signedTx.Hash().Hex()
-	log.Printf("swap %s %#v amount=%f amount0Out=%d amount0Out=%d txhash %s", pair.name, side, amount, amount0Out, amount1Out, txhash)
-	err = u.rest.SendTransaction(context.Background(), signedTx)
+	// txhash := signedTx.Hash().Hex()
+	err = u.client.SendTransaction(context.Background(), signedTx)
 	if err != nil {
-		u.nonce += 1
+		return err
 	}
+	receipt, err := bind.WaitMined(context.Background(), u.client, signedTx)
+	if err != nil {
+		return err
+	}
+	log.Printf("swap %s side=%d amount=%f amount0Out=%d amount0Out=%d %#v", pair.name, side, amount, amount0Out, amount1Out, receipt)
+	if receipt.Status == types.ReceiptStatusFailed {
+		return errors.New("swap tx fail")
+	}
+	u.nonce += 1
 	return err
 }
 
