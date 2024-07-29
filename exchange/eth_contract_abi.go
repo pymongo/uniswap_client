@@ -2,6 +2,7 @@ package exchange
 
 import (
 	"arbitrage/exchange/bindings"
+	"log"
 	"math/big"
 	"strings"
 
@@ -13,8 +14,8 @@ import (
 
 // go:embed bindings/uniswapv2_pair.abi
 // var IUniswapV2PairAbiStr string
-var PairAbi, _ = abi.JSON(strings.NewReader(bindings.UniswapV2PairMetaData.ABI))
-var Erc20Abi, _ = abi.JSON(strings.NewReader(bindings.Erc20MetaData.ABI))
+var PairAbi, err1 = abi.JSON(strings.NewReader(bindings.UniswapV2PairMetaData.ABI))
+var Erc20Abi, err2 = abi.JSON(strings.NewReader(bindings.Erc20MetaData.ABI))
 var BalanceOf = Erc20Abi.Methods["balanceOf"]
 var GetReserves = PairAbi.Methods["getReserves"]
 var Swap = PairAbi.Methods["swap"]
@@ -47,5 +48,23 @@ func NewEventAbi(pairAbi *abi.ABI, event string) EventAbi {
 	return EventAbi{
 		Arg: evt.Inputs,
 		Id:  evt.ID,
+	}
+}
+
+func CheckAbiMethods() {
+	if err1 != nil {
+		log.Fatalln(err1)
+	}
+	if err2 != nil {
+		log.Fatalln(err2)
+	}
+	if BalanceOf.Name == "" {
+		log.Fatalf("BalanceOf %#v", Erc20Abi.Methods)
+	}
+	if GetReserves.Name == "" {
+		log.Fatalln("GetReserves")
+	}
+	if Swap.Name == "" {
+		log.Fatalln("Swap")
 	}
 }

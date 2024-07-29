@@ -50,6 +50,7 @@ type UniBroker struct {
 }
 
 func NewUniBroker(conf *config.Config, bboCh chan model.Bbo) UniBroker {
+	CheckAbiMethods()
 	var err error
 
 	key := conf.PrivateKey
@@ -151,7 +152,7 @@ func (u *UniBroker) Mainloop() {
 	}()
 }
 
-var pairs = map[common.Address]*UniPair{
+var Pairs = map[common.Address]*UniPair{
 	PairAddr: {
 		addr:                PairAddr,
 		name:                "axlUSDC/WFTM",
@@ -162,9 +163,9 @@ var pairs = map[common.Address]*UniPair{
 }
 
 func getPairAddr() []common.Address {
-	p := make([]common.Address, len(pairs))
+	p := make([]common.Address, len(Pairs))
 	i := 0
-	for key := range pairs {
+	for key := range Pairs {
 		p[i] = key
 		i += 1
 	}
@@ -250,9 +251,9 @@ func (pair *UniPair) bbo() model.Bbo {
 
 func (u *UniBroker) queryReserves() error {
 	methodIdSignature := hexutil.Encode(hexutil.Bytes(GetReserves.ID))
-	batch := make([]rpc.BatchElem, len(pairs))
+	batch := make([]rpc.BatchElem, len(Pairs))
 	i := 0
-	for addr := range pairs {
+	for addr := range Pairs {
 		_ = addr
 		batch[i] = rpc.BatchElem{
 			Method: "eth_call",
@@ -288,7 +289,7 @@ func (u *UniBroker) queryReserves() error {
 		if err != nil {
 			log.Fatalln(err)
 		}
-		pair := pairs[pairAddress]
+		pair := Pairs[pairAddress]
 		pair.reserve0 = reserve.Reserve0
 		pair.reserve1 = reserve.Reserve1
 		// price := pair.price()
@@ -340,7 +341,7 @@ func (u *UniBroker) subscribeEvents(wsUrl string) error {
 }
 func (u *UniBroker) handleLog(eventsAbi *PairEventsAbi, logEvt types.Log) {
 	pairAddress := logEvt.Address
-	pair := pairs[pairAddress]
+	pair := Pairs[pairAddress]
 	switch logEvt.Topics[0] {
 	case eventsAbi.Sync.Id: // EventSignature
 		values, err := eventsAbi.Sync.Arg.UnpackValues(logEvt.Data)
@@ -516,14 +517,14 @@ func (u *UniBroker) Swap(pair *UniPair, side model.Side, amount float64) error {
 			new(big.Float).Mul(big.NewFloat(amount), mul).Int(amount0Out)
 		}
 	}
-	args, err := Swap.Inputs.Pack(amount0Out, amount1Out, u.addr, [0]byte{})
+	args, err := Swap.Inputs.Pack(amount0Out, amount1Out, u.addr, []byte{})
 	if err != nil {
 		log.Fatalln(err)
 	}
 	data := make([]byte, 4 + len(args))
 	copy(data, Swap.ID)
 	copy(data[4:], args)
-	tx := types.NewTransaction(u.nonce, pair.addr, big.NewInt(0), gasLimit, u.gasPrice, data)
+	tx := types.NewTransaction(u.nonce, pair.addr, big.NewInt(0), 8*gasLimit, u.gasPrice, data)
     signedTx, err := types.SignTx(tx, types.NewEIP155Signer(u.chainId), u.privKey)
 	if err != nil {
 		log.Fatalln(err)

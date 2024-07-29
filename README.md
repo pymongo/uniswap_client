@@ -29,6 +29,7 @@ abigen --abi exchange/bindings/uniswapv2_router.abi --out exchange/bindings/unis
 abigen --abi exchange/bindings/uniswapv2_factory.abi --out exchange/bindings/uniswapv2_factory.go --type UniswapV2Factory --pkg bindings
 abigen --abi exchange/bindings/uniswapv2_pair.abi --out exchange/bindings/uniswapv2_pair.go --type UniswapV2Pair --pkg bindings
 
+# 不能用 ETH USDC 合约的 abi 里面用的是 Read as Proxy
 abigen --abi exchange/bindings/erc20.abi --out exchange/bindings/erc20.go --type Erc20 --pkg bindings
 ```
 
