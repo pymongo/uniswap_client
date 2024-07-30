@@ -30,22 +30,23 @@ import (
 const (
 	gasLimit = uint64(21000) // Gas limit for standard ETH transfer
 )
+
 // var (
 // 	weiPerEther    = new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)
 // 	usdcDecimalMul = new(big.Int).Exp(big.NewInt(10), big.NewInt(6), nil)
 // )
 
 type UniBroker struct {
-	privKey *ecdsa.PrivateKey
-	addr    common.Address
-	nonce   uint64
-	Eth     float64 // gas coin
-	Usdc    float64 // USDC or USDT
-	chainId *big.Int
-	client    *ethclient.Client
+	privKey  *ecdsa.PrivateKey
+	addr     common.Address
+	nonce    uint64
+	Eth      float64 // gas coin
+	Usdc     float64 // USDC or USDT
+	chainId  *big.Int
+	client   *ethclient.Client
 	gasPrice *big.Int
-	conf *config.Config
-	bboCh   chan model.Bbo
+	conf     *config.Config
+	bboCh    chan model.Bbo
 }
 
 func NewUniBroker(conf *config.Config, bboCh chan model.Bbo) UniBroker {
@@ -53,7 +54,7 @@ func NewUniBroker(conf *config.Config, bboCh chan model.Bbo) UniBroker {
 	var err error
 
 	var spaceCount = 0
-	for _,char := range []byte(conf.PrivateKey) {
+	for _, char := range []byte(conf.PrivateKey) {
 		if char == ' ' {
 			spaceCount += 1
 		}
@@ -107,10 +108,10 @@ func NewUniBroker(conf *config.Config, bboCh chan model.Bbo) UniBroker {
 		privKey: privateKey,
 		addr:    address,
 		bboCh:   bboCh,
-		client:    rest,
+		client:  rest,
 		nonce:   nonce,
 		chainId: chainId,
-		conf: conf,
+		conf:    conf,
 	}
 }
 
@@ -135,9 +136,50 @@ func (u *UniBroker) Mainloop() {
 			}
 		}()
 	}
-	for _,pair := range u.conf.Pairs {
+
+	for _, pair := range u.conf.Pairs {
 		// log.Printf("%#v", pair)
 		log.Printf("Pair %s price=%f %s amount=%f,%f", pair.Addr, pair.Price(), pair.Addr, pair.Amount0(), pair.Amount1())
+		for _, token := range [2]common.Address{pair.Token0Addr, pair.Token1Addr} {
+			erc20Client, err := bindings.NewErc20(token, u.client)
+			if err != nil {
+				log.Fatalln(err)
+			}
+			// approve 委托/授权给 router 合约可扣款(transferFrom)的额度
+			allowance, err := erc20Client.Allowance(nil, u.addr, u.conf.RouterAddr)
+			if err != nil {
+				log.Fatalln(err)
+			}
+			log.Println("erc20", token, "allowance to ", u.conf.RouterAddr, "=", allowance)
+			if allowance.Sign() == 0 || allowance.Cmp(big.NewInt(0)) == 0 {
+				log.Println("erc20", token, "approve", u.conf.RouterAddr)
+				opts := bind.TransactOpts{
+					From:  u.addr,
+					Nonce: big.NewInt((int64)(u.nonce)),
+					Signer: func(a common.Address, tx *types.Transaction) (*types.Transaction, error) {
+						signedTx, err := types.SignTx(tx, types.NewEIP155Signer(u.chainId), u.privKey)
+						if err != nil {
+							log.Fatalln(err)
+						}
+						return signedTx, nil
+					},
+					GasPrice: u.gasPrice,
+					GasLimit: gasLimit * 4,
+				}
+				tx, err := erc20Client.Approve(&opts, u.conf.RouterAddr, new(big.Int).Exp(big.NewInt(10), big.NewInt(24), nil))
+				if err != nil {
+					log.Fatalln(err)
+				}
+				u.nonce += 1 // 不管成功失败只要给过 Gas 费 nonce 就自增
+				receipt, err := bind.WaitMined(context.Background(), u.client, tx)
+				if err != nil {
+					log.Fatalln(err)
+				}
+				if receipt.Status == types.ReceiptStatusFailed {
+					log.Fatalln("approve fail")
+				}
+			}
+		}
 	}
 	log.Printf("%s wallet %fUSDC %fETH", u.addr, u.Usdc, u.Eth)
 	go func() {
@@ -291,7 +333,7 @@ func (u *UniBroker) handleLog(eventsAbi *PairEventsAbi, logEvt types.Log) {
 	for _, p := range u.conf.Pairs {
 		if p.Addr == pairAddress {
 			pair = p
-			break;
+			break
 		}
 	}
 	switch logEvt.Topics[0] {
@@ -366,9 +408,9 @@ func (u *UniBroker) queryBalanceGasPrice() error {
 	batch := make([]rpc.BatchElem, 3)
 
 	var ethBalance hexutil.Big
-	batch[0] = rpc.BatchElem {
+	batch[0] = rpc.BatchElem{
 		Method: "eth_getBalance", // BalanceAt
-		Args: []interface{} {
+		Args: []interface{}{
 			u.addr,
 			"latest",
 		},
@@ -383,13 +425,13 @@ func (u *UniBroker) queryBalanceGasPrice() error {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	batch[1] = rpc.BatchElem {
+	batch[1] = rpc.BatchElem{
 		Method: "eth_call",
 		// https://github.com/ethereum/go-ethereum/pull/15640/files
 		// 用 data 或者 input 都行 data 是后面 rename 成 input 的
-		Args: []interface{} {
-			map[string]hexutil.Bytes {
-				"to":   u.conf.UsdcAddr.Bytes(),
+		Args: []interface{}{
+			map[string]hexutil.Bytes{
+				"to":    u.conf.UsdcAddr.Bytes(),
 				"input": hexutil.Bytes(append(BalanceOf.ID, params...)),
 			},
 			"latest",
@@ -398,11 +440,11 @@ func (u *UniBroker) queryBalanceGasPrice() error {
 	}
 
 	var gasPrice hexutil.Big
-	batch[2] = rpc.BatchElem {
+	batch[2] = rpc.BatchElem{
 		Method: "eth_gasPrice",
 		Result: &gasPrice,
 	}
-	
+
 	err = u.client.Client().BatchCall(batch)
 	if err != nil {
 		return err
@@ -416,7 +458,7 @@ func (u *UniBroker) queryBalanceGasPrice() error {
 
 	ethF64, _ := ethBalance.ToInt().Float64()
 	u.Eth = ethF64 / 1e18
-	usdcF64, _ :=  new(big.Int).SetBytes(usdcBalance).Float64()
+	usdcF64, _ := new(big.Int).SetBytes(usdcBalance).Float64()
 	// gasPriceGwei, _ := gasPrice.ToInt().Float64()
 	// log.Printf("eth %f, usdc %f, gasPrice %f gWei\n", ethF64, usdcF64, gasPriceGwei / 1e9)
 	u.Usdc = usdcF64 / 1e6
@@ -428,7 +470,7 @@ func (u *UniBroker) TransferEth(amountEther float64) error {
 	to := u.conf.DepositAddr
 	amountWei := new(big.Int).SetInt64(int64(math.Floor(amountEther * 1e18)))
 	tx := types.NewTransaction(u.nonce, to, amountWei, gasLimit, u.gasPrice, nil)
-    signedTx, err := types.SignTx(tx, types.NewEIP155Signer(u.chainId), u.privKey)
+	signedTx, err := types.SignTx(tx, types.NewEIP155Signer(u.chainId), u.privKey)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -458,7 +500,8 @@ func (u *UniBroker) TransferEth(amountEther float64) error {
 - 任意的附加数据（calldata）在某些情况下用于 flash swaps。如果包含数据，则可能会触发更多复杂的操作，比如在执行完 swap 后立即调用接收者的合约以处理闪电贷逻辑
 */
 // side 买卖操作 针对的是 base currency
-func (u *UniBroker) Swap(pair *config.UniPair, side model.Side, amount float64) error {
+func (u *UniBroker) Swap(pairIdx int, side model.Side, amount float64) error {
+	pair := &u.conf.Pairs[0]
 	amount0Out := big.NewInt(0)
 	amount1Out := big.NewInt(0)
 	var baseCcyMul *big.Float
@@ -469,9 +512,6 @@ func (u *UniBroker) Swap(pair *config.UniPair, side model.Side, amount float64) 
 	}
 	baseCcyAmount, _ := new(big.Float).Mul(big.NewFloat(amount), baseCcyMul).Int(nil)
 	log.Println("amount", amount, "baseCcyMul", baseCcyMul, "baseCcyAmount", baseCcyAmount)
-	if baseCcyAmount == big.NewInt(0) {
-		log.Fatalln("amount is zero")
-	}
 	if side == model.SideBuy {
 		if pair.QuoteIsToken1 {
 			amount0Out = baseCcyAmount
@@ -497,13 +537,13 @@ func (u *UniBroker) Swap(pair *config.UniPair, side model.Side, amount float64) 
 	}
 	args, err := Swap.Inputs.Pack(amount0Out, amount1Out, u.addr, []byte{})
 	if err != nil {
-		log.Fatalln(err)	
+		log.Fatalln(err)
 	}
-	data := make([]byte, 4 + len(args))
+	data := make([]byte, 4+len(args))
 	copy(data, Swap.ID)
 	copy(data[4:], args)
 	tx := types.NewTransaction(u.nonce, pair.Addr, big.NewInt(0), 8*gasLimit, u.gasPrice, data)
-    signedTx, err := types.SignTx(tx, types.NewEIP155Signer(u.chainId), u.privKey)
+	signedTx, err := types.SignTx(tx, types.NewEIP155Signer(u.chainId), u.privKey)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -524,6 +564,7 @@ func (u *UniBroker) Swap(pair *config.UniPair, side model.Side, amount float64) 
 	return err
 }
 
+// 买FTM的话value要写? 卖 FTM 的话value不写?
 func (u *UniBroker) BuyEth(pairIdx int, amount float64) error {
 	pair := &u.conf.Pairs[0]
 	var baseCcyMul *big.Float
@@ -532,7 +573,7 @@ func (u *UniBroker) BuyEth(pairIdx int, amount float64) error {
 	} else {
 		baseCcyMul = big.NewFloat(pair.DecimalsMul1)
 	}
-	baseCcyAmount, _ := new(big.Float).Mul(big.NewFloat(amount), baseCcyMul).Int(nil)	
+	baseCcyAmount, _ := new(big.Float).Mul(big.NewFloat(amount), baseCcyMul).Int(nil)
 	k := new(big.Int).Mul(pair.Reserve0, pair.Reserve1)
 	// 计算最大滑点相关 必须设置滑点保护否则怕被MEV夹
 	var amountInMax *big.Int
@@ -549,8 +590,8 @@ func (u *UniBroker) BuyEth(pairIdx int, amount float64) error {
 	}
 	// 手续费 0.2% 滑点 0.1%
 	fee := 0.0019
-	sliapge := 0.01
-	amountInMax = big.NewInt((int64)(pair.Price() * amount * 1e6 * (1+fee+sliapge)))
+	sliapge := 0.0005
+	amountInMax = big.NewInt((int64)(pair.Price() * amount * 1e6 * (1 + fee + sliapge)))
 	// amountInMax = big.NewInt(520000)
 
 	routerClient, err := bindings.NewUniswapV2RouterTransactor(u.conf.RouterAddr, u.client)
@@ -567,15 +608,16 @@ func (u *UniBroker) BuyEth(pairIdx int, amount float64) error {
 			}
 			return signedTx, nil
 		},
-		GasPrice:  u.gasPrice,
-		GasLimit:  gasLimit * 10,
+		GasPrice: u.gasPrice,
+		GasLimit: gasLimit * 10,
 	}
-	path := []common.Address {
+	// path[0] 是支付的币种 path[1] 是获得的币种
+	path := []common.Address{
 		pair.Token0Addr,
 		pair.Token1Addr,
 	}
-	deadline := big.NewInt(time.Now().Add(30 * time.Hour).Unix())
-	tx, err := routerClient.SwapExactTokensForTokens(&opts, baseCcyAmount, amountInMax, path, u.addr, deadline)
+	deadline := big.NewInt(time.Now().Add(30 * time.Second).Unix())
+	tx, err := routerClient.SwapTokensForExactETH(&opts, baseCcyAmount, amountInMax, path, u.addr, deadline)
 	if err != nil {
 		log.Println(err)
 		return err
@@ -586,9 +628,9 @@ func (u *UniBroker) BuyEth(pairIdx int, amount float64) error {
 		log.Println(err)
 		return err
 	}
-	log.Println(baseCcyAmount, amountInMax, path, u.addr, deadline, receipt.TxHash, receipt.Logs)
+	log.Println(baseCcyAmount, amountInMax, path, u.addr, deadline, "txhash", receipt.TxHash, "logs", receipt.Logs)
 	if receipt.Status == types.ReceiptStatusFailed {
-		return errors.New("swap tx fail")
+		return errors.New("SwapTokensForExactETH tx fail")
 	}
 	return nil
 }
@@ -613,8 +655,8 @@ func (u *UniBroker) RouterSellEth() {
 	// 		newBaseReserve := new(big.Int).Add(pair.Reserve1, baseCcyAmount)
 	// 		newQuoteReserve := new(big.Int).Div(k, newBaseReserve)
 	// 		amountInMax = new(big.Int).Sub(newQuoteReserve, pair.Reserve0)
-	// 	}	
-	// }	
+	// 	}
+	// }
 	panic("TODO swapExactETHForTokens")
 }
 
