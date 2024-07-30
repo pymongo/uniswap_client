@@ -27,14 +27,8 @@ import (
 	"github.com/tyler-smith/go-bip39"
 )
 
-const (
-	gasLimit = uint64(21000) // Gas limit for standard ETH transfer
-)
-
-// var (
-// 	weiPerEther    = new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)
-// 	usdcDecimalMul = new(big.Int).Exp(big.NewInt(10), big.NewInt(6), nil)
-// )
+const gasLimit = uint64(21000) // Gas limit for standard ETH transfer
+// var weiPerEther    = new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)
 
 type UniBroker struct {
 	privKey  *ecdsa.PrivateKey
@@ -588,11 +582,9 @@ func (u *UniBroker) BuyEth(pairIdx int, amount float64) error {
 		//lint:ignore SA4006 not_used
 		amountInMax = new(big.Int).Sub(newQuoteReserve, pair.Reserve0)
 	}
-	// 手续费 0.2% 滑点 0.1%
 	fee := 0.0019
 	sliapge := 0.0005
 	amountInMax = big.NewInt((int64)(pair.Price() * amount * 1e6 * (1 + fee + sliapge)))
-	// amountInMax = big.NewInt(520000)
 
 	routerClient, err := bindings.NewUniswapV2RouterTransactor(u.conf.RouterAddr, u.client)
 	if err != nil {
@@ -673,7 +665,7 @@ func (u *UniBroker) DeployContract() {
 	if err != nil {
 		log.Fatalf("Failed to parse contract ABI: %v", err)
 	}
-	// 获取合约部署的字节码
+	// 获取智能合约部署的字节码
 	bytecode, err := os.ReadFile("exchange/bindings/SwapHelper.bin")
 	if err != nil {
 		log.Fatalf("Failed to read bytecode file: %v", err)
