@@ -52,16 +52,22 @@ func NewUniBroker(conf *config.Config, bboCh chan model.Bbo) UniBroker {
 	CheckAbiMethods()
 	var err error
 
+	var spaceCount = 0
+	for _,char := range []byte(conf.PrivateKey) {
+		if char == ' ' {
+			spaceCount += 1
+		}
+	}
 	key := conf.PrivateKey
 	var privateKeyBytes []byte
-	if len(key) == 64 {
+	if spaceCount == 12 || spaceCount == 24 {
+		privateKeyBytes = mnemonic2PrivateKey(key, 60)
+	} else {
 		// 不能拿 contains 空格判断是不是助记词，很可能私钥里面就有多个空格 byte
 		privateKeyBytes, err = hexutil.Decode(key)
 		if err != nil {
 			log.Fatalln(key, err)
 		}
-	} else {
-		privateKeyBytes = mnemonic2PrivateKey(key, 60)
 	}
 
 	privateKey, err := crypto.ToECDSA(privateKeyBytes)
@@ -130,10 +136,10 @@ func (u *UniBroker) Mainloop() {
 		}()
 	}
 	for _,pair := range u.conf.Pairs {
-		log.Printf("%#v", pair)
-		log.Printf("Pair %s\n price=%f %s amount=%f,%f", pair.Addr, pair.Price(), pair.Addr, pair.Amount0(), pair.Amount1())
+		// log.Printf("%#v", pair)
+		log.Printf("Pair %s price=%f %s amount=%f,%f", pair.Addr, pair.Price(), pair.Addr, pair.Amount0(), pair.Amount1())
 	}
-	log.Printf("链上资产 %fUSDC %fETH", u.Usdc, u.Eth)
+	log.Printf("%s wallet %fUSDC %fETH", u.addr, u.Usdc, u.Eth)
 	go func() {
 		for {
 			time.Sleep(250 * time.Microsecond)
@@ -206,7 +212,7 @@ func (u *UniBroker) queryReserves() error {
 		return err
 	}
 	for i, elem := range batch {
-		pair := u.conf.Pairs[i]
+		pair := &u.conf.Pairs[i]
 		pairAddress := pair.Addr
 		if elem.Error != nil {
 			log.Fatalf("Error fetching reserves for pair %s: %v", pairAddress, elem.Error)
@@ -227,10 +233,10 @@ func (u *UniBroker) queryReserves() error {
 		}
 		pair.Reserve0 = reserve.Reserve0
 		pair.Reserve1 = reserve.Reserve1
-		log.Printf("%#v", pair)
+		// log.Printf("%#v", pair)
 		u.bboCh <- pair.Bbo()
 	}
-	log.Printf("%#v",  u.conf.Pairs[0])
+	// log.Printf("%#v",  u.conf.Pairs[0])
 	return nil
 }
 
@@ -518,7 +524,8 @@ func (u *UniBroker) Swap(pair *config.UniPair, side model.Side, amount float64) 
 	return err
 }
 
-func (u *UniBroker) BuyEth(pair *config.UniPair, amount float64) error {
+func (u *UniBroker) BuyEth(pairIdx int, amount float64) error {
+	pair := &u.conf.Pairs[0]
 	var baseCcyMul *big.Float
 	if pair.QuoteIsToken1 {
 		baseCcyMul = big.NewFloat(pair.DecimalsMul0)
@@ -564,8 +571,8 @@ func (u *UniBroker) BuyEth(pair *config.UniPair, amount float64) error {
 		GasLimit:  gasLimit * 10,
 	}
 	path := []common.Address {
-		pair.Token1Addr,
 		pair.Token0Addr,
+		pair.Token1Addr,
 	}
 	deadline := big.NewInt(time.Now().Add(30 * time.Hour).Unix())
 	tx, err := routerClient.SwapExactTokensForTokens(&opts, baseCcyAmount, amountInMax, path, u.addr, deadline)
