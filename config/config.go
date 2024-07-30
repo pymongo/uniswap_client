@@ -36,7 +36,7 @@ func NewConfig() Config {
 		
 	var config Config
 	if _, err := toml.Decode(string(tomlStr), &config); err != nil {
-		log.Fatalln("err")
+		log.Fatalln(err)
 	}
 
 	config.Key = utils.AesDecrypt(config.Key)
@@ -53,27 +53,27 @@ type UniPair struct {
 	Token1Addr   common.Address
 	Reserve0            *big.Int
 	Reserve1            *big.Int
-	DecimalsMul0        *big.Int // e.g. 1e18
-	DecimalsMul1        *big.Int
+	DecimalsMul0        float64 // e.g. 1e18
+	DecimalsMul1        float64
 	QuoteIsToken1 bool // e.g. USDC/ETH is false
 }
-func (pair *UniPair) amount0() float64 {
+func (pair *UniPair) Amount0() float64 {
 	reserve := new(big.Int).Set(pair.Reserve0)
-	reserve.Div(reserve, pair.DecimalsMul0)
+	reserve.Div(reserve, big.NewInt((int64)(pair.DecimalsMul0)))
 	amount := new(big.Float).SetInt(reserve)
 	float, _ := amount.Float64()
 	return float
 }
-func (pair *UniPair) amount1() float64 {
+func (pair *UniPair) Amount1() float64 {
 	reserve := new(big.Int).Set(pair.Reserve1)
-	reserve.Div(reserve, pair.DecimalsMul1)
+	reserve.Div(reserve, big.NewInt((int64)(pair.DecimalsMul1)))
 	amount := new(big.Float).SetInt(reserve)
 	float, _ := amount.Float64()
 	return float
 }
 func (pair *UniPair) Price() float64 {
-	amount0 := pair.amount0()
-	amount1 := pair.amount1()
+	amount0 := pair.Amount0()
+	amount1 := pair.Amount1()
 
 	if pair.QuoteIsToken1 {
 		return amount1 / amount0

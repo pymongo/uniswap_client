@@ -30,10 +30,10 @@ import (
 const (
 	gasLimit = uint64(21000) // Gas limit for standard ETH transfer
 )
-var (
-	weiPerEther    = new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)
-	usdcDecimalMul = new(big.Int).Exp(big.NewInt(10), big.NewInt(6), nil)
-)
+// var (
+// 	weiPerEther    = new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)
+// 	usdcDecimalMul = new(big.Int).Exp(big.NewInt(10), big.NewInt(6), nil)
+// )
 
 type UniBroker struct {
 	privKey *ecdsa.PrivateKey
@@ -54,7 +54,7 @@ func NewUniBroker(conf *config.Config, bboCh chan model.Bbo) UniBroker {
 
 	key := conf.PrivateKey
 	var privateKeyBytes []byte
-	if key[:2] == "0x" || len(key) == 64 {
+	if len(key) == 64 {
 		// 不能拿 contains 空格判断是不是助记词，很可能私钥里面就有多个空格 byte
 		privateKeyBytes, err = hexutil.Decode(key)
 		if err != nil {
@@ -113,7 +113,6 @@ func (u *UniBroker) Mainloop() {
 	if err != nil {
 		log.Fatalln(err)
 	}
-
 	err = u.queryBalanceGasPrice()
 	if err != nil {
 		log.Fatalln(err)
@@ -129,6 +128,10 @@ func (u *UniBroker) Mainloop() {
 				time.Sleep(1 * time.Second)
 			}
 		}()
+	}
+	for _,pair := range u.conf.Pairs {
+		log.Printf("%#v", pair)
+		log.Printf("Pair %s\n price=%f %s amount=%f,%f", pair.Addr, pair.Price(), pair.Addr, pair.Amount0(), pair.Amount1())
 	}
 	log.Printf("链上资产 %fUSDC %fETH", u.Usdc, u.Eth)
 	go func() {
@@ -203,7 +206,8 @@ func (u *UniBroker) queryReserves() error {
 		return err
 	}
 	for i, elem := range batch {
-		pairAddress := u.conf.Pairs[i].Addr
+		pair := u.conf.Pairs[i]
+		pairAddress := pair.Addr
 		if elem.Error != nil {
 			log.Fatalf("Error fetching reserves for pair %s: %v", pairAddress, elem.Error)
 			continue
@@ -218,13 +222,15 @@ func (u *UniBroker) queryReserves() error {
 		if err != nil {
 			log.Fatalln(err)
 		}
-		pair := u.conf.Pairs[i]
-		log.Printf("%#v", reserve)
+		if reserve.Reserve0 == nil {
+			log.Fatalln("reserve.Reserve0 == nil")
+		}
 		pair.Reserve0 = reserve.Reserve0
 		pair.Reserve1 = reserve.Reserve1
-		// price := pair.price()
+		log.Printf("%#v", pair)
 		u.bboCh <- pair.Bbo()
 	}
+	log.Printf("%#v",  u.conf.Pairs[0])
 	return nil
 }
 
@@ -451,9 +457,9 @@ func (u *UniBroker) Swap(pair *config.UniPair, side model.Side, amount float64) 
 	amount1Out := big.NewInt(0)
 	var baseCcyMul *big.Float
 	if pair.QuoteIsToken1 {
-		baseCcyMul = new(big.Float).SetInt(pair.DecimalsMul0)
+		baseCcyMul = big.NewFloat(pair.DecimalsMul0)
 	} else {
-		baseCcyMul = new(big.Float).SetInt(pair.DecimalsMul1)
+		baseCcyMul = big.NewFloat(pair.DecimalsMul1)
 	}
 	baseCcyAmount, _ := new(big.Float).Mul(big.NewFloat(amount), baseCcyMul).Int(nil)
 	log.Println("amount", amount, "baseCcyMul", baseCcyMul, "baseCcyAmount", baseCcyAmount)
@@ -467,7 +473,6 @@ func (u *UniBroker) Swap(pair *config.UniPair, side model.Side, amount float64) 
 			amount1Out = baseCcyAmount
 		}
 	} else {
-		// https://ftmscan.com/tx/0xd429b9a74d35f6d8a1c3dcfc455843afaf675c31454d5b01d47a3e2e11b1e7d3
 		// 卖出 ETH 获得 USDC 的情况复杂点, 要用 x*y=k 公式算出可获得多少 USDC
 		k := new(big.Int).Mul(pair.Reserve0, pair.Reserve1)
 		if pair.QuoteIsToken1 {
@@ -516,9 +521,9 @@ func (u *UniBroker) Swap(pair *config.UniPair, side model.Side, amount float64) 
 func (u *UniBroker) BuyEth(pair *config.UniPair, amount float64) error {
 	var baseCcyMul *big.Float
 	if pair.QuoteIsToken1 {
-		baseCcyMul = new(big.Float).SetInt(pair.DecimalsMul0)
+		baseCcyMul = big.NewFloat(pair.DecimalsMul0)
 	} else {
-		baseCcyMul = new(big.Float).SetInt(pair.DecimalsMul1)
+		baseCcyMul = big.NewFloat(pair.DecimalsMul1)
 	}
 	baseCcyAmount, _ := new(big.Float).Mul(big.NewFloat(amount), baseCcyMul).Int(nil)	
 	k := new(big.Int).Mul(pair.Reserve0, pair.Reserve1)
@@ -541,7 +546,7 @@ func (u *UniBroker) BuyEth(pair *config.UniPair, amount float64) error {
 	amountInMax = big.NewInt((int64)(pair.Price() * amount * 1e6 * (1+fee+sliapge)))
 	// amountInMax = big.NewInt(520000)
 
-	routerClient, err := bindings.NewUniswapV2RouterTransactor(common.HexToAddress("0x1E5675986fe386fF2Fef179C024F5C8875a96aE5"), u.client)
+	routerClient, err := bindings.NewUniswapV2RouterTransactor(u.conf.RouterAddr, u.client)
 	if err != nil {
 		log.Fatalln(err)
 	}
