@@ -27,17 +27,10 @@ import (
 	"github.com/tyler-smith/go-bip39"
 )
 
-// const (
-// 	wsUrl  = "wss://wsapi.fantom.network/" // 不支持 ws 的 rpc 服务商就填空的 url
-// )
-
 const (
 	gasLimit = uint64(21000) // Gas limit for standard ETH transfer
 )
 var (
-	PairAddr = common.HexToAddress("0x084F933B6401a72291246B5B5eD46218a68773e6")
-	routerAddr = common.HexToAddress("0x5023882f4D1EC10544FCB2066abE9C1645E95AA0")
-	// wftmAddr = common.HexToAddress("0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83")
 	weiPerEther    = new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)
 	usdcDecimalMul = new(big.Int).Exp(big.NewInt(10), big.NewInt(6), nil)
 )
@@ -158,30 +151,6 @@ func (u *UniBroker) Mainloop() {
 	}()
 }
 
-var Pairs = map[common.Address]*UniPair{
-	PairAddr: {
-		addr:                PairAddr,
-		name:                "axlUSDC/WFTM",
-		token0Addr:          common.HexToAddress("0x1B6382DBDEa11d97f24495C9A90b7c88469134a4"),
-		token1Addr:          common.HexToAddress("0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83"),		
-		decimalsMul0:        usdcDecimalMul,
-		decimalsMul1:        weiPerEther,
-		quoteIsToken1: false,
-	},
-}
-
-func getPairAddr() []common.Address {
-	p := make([]common.Address, len(Pairs))
-	i := 0
-	for key := range Pairs {
-		p[i] = key
-		i += 1
-	}
-	return p
-}
-
-var pairAddresses = getPairAddr()
-
 func mnemonic2PrivateKey(mnemonic string, slipp44CoinType uint32) []byte {
 	seed := bip39.NewSeed(mnemonic, "")
 	masterKey, err := bip32.NewMasterKey(seed)
@@ -212,69 +181,21 @@ func mnemonic2PrivateKey(mnemonic string, slipp44CoinType uint32) []byte {
 	return addressIndex.Key
 }
 
-type UniPair struct {
-	addr common.Address
-	name string // 只是用于日志打印
-	token0Addr   common.Address
-	token1Addr   common.Address
-	reserve0            *big.Int
-	reserve1            *big.Int
-	decimalsMul0        *big.Int // e.g. 1e18
-	decimalsMul1        *big.Int
-	quoteIsToken1 bool // e.g. USDC/ETH is false
-}
-
-func (pair *UniPair) amount0() float64 {
-	reserve := new(big.Int).Set(pair.reserve0)
-	reserve.Div(reserve, pair.decimalsMul0)
-	amount := new(big.Float).SetInt(reserve)
-	float, _ := amount.Float64()
-	return float
-}
-func (pair *UniPair) amount1() float64 {
-	reserve := new(big.Int).Set(pair.reserve1)
-	reserve.Div(reserve, pair.decimalsMul1)
-	amount := new(big.Float).SetInt(reserve)
-	float, _ := amount.Float64()
-	return float
-}
-func (pair *UniPair) price() float64 {
-	amount0 := pair.amount0()
-	amount1 := pair.amount1()
-
-	if pair.quoteIsToken1 {
-		return amount1 / amount0
-	} else {
-		return amount0 / amount1
-	}
-}
-func (pair *UniPair) bbo() model.Bbo {
-	price := pair.price()
-	return model.Bbo{
-		Ask:    price,
-		Bid:    price,
-		TimeMs: time.Now().UnixMilli(),
-	}
-}
-
 func (u *UniBroker) queryReserves() error {
 	methodIdSignature := hexutil.Encode(hexutil.Bytes(GetReserves.ID))
-	batch := make([]rpc.BatchElem, len(Pairs))
-	i := 0
-	for addr := range Pairs {
-		_ = addr
+	batch := make([]rpc.BatchElem, len(u.conf.Pairs))
+	for i, pair := range u.conf.Pairs {
 		batch[i] = rpc.BatchElem{
 			Method: "eth_call",
 			Args: []interface{}{
 				map[string]string{
-					"to":   addr.Hex(),
+					"to":   pair.Addr.Hex(),
 					"data": methodIdSignature,
 				},
 				"latest",
 			},
 			Result: new(hexutil.Bytes),
 		}
-		i++
 	}
 	err := u.client.Client().BatchCall(batch)
 	if err != nil {
@@ -282,7 +203,7 @@ func (u *UniBroker) queryReserves() error {
 		return err
 	}
 	for i, elem := range batch {
-		pairAddress := pairAddresses[i]
+		pairAddress := u.conf.Pairs[i].Addr
 		if elem.Error != nil {
 			log.Fatalf("Error fetching reserves for pair %s: %v", pairAddress, elem.Error)
 			continue
@@ -297,11 +218,12 @@ func (u *UniBroker) queryReserves() error {
 		if err != nil {
 			log.Fatalln(err)
 		}
-		pair := Pairs[pairAddress]
-		pair.reserve0 = reserve.Reserve0
-		pair.reserve1 = reserve.Reserve1
+		pair := u.conf.Pairs[i]
+		log.Printf("%#v", reserve)
+		pair.Reserve0 = reserve.Reserve0
+		pair.Reserve1 = reserve.Reserve1
 		// price := pair.price()
-		u.bboCh <- pair.bbo()
+		u.bboCh <- pair.Bbo()
 	}
 	return nil
 }
@@ -318,6 +240,10 @@ func (u *UniBroker) subscribeEvents(wsUrl string) error {
 		Burn:     NewEventAbi(&PairAbi, "Burn"),
 		Mint:     NewEventAbi(&PairAbi, "Mint"),
 		Transfer: NewEventAbi(&PairAbi, "Transfer"),
+	}
+	pairAddresses := make([]common.Address, len(u.conf.Pairs))
+	for i := range u.conf.Pairs {
+		pairAddresses[i] = u.conf.Pairs[i].Addr
 	}
 	query := ethereum.FilterQuery{
 		Addresses: pairAddresses,
@@ -349,7 +275,13 @@ func (u *UniBroker) subscribeEvents(wsUrl string) error {
 }
 func (u *UniBroker) handleLog(eventsAbi *PairEventsAbi, logEvt types.Log) {
 	pairAddress := logEvt.Address
-	pair := Pairs[pairAddress]
+	var pair config.UniPair
+	for _, p := range u.conf.Pairs {
+		if p.Addr == pairAddress {
+			pair = p
+			break;
+		}
+	}
 	switch logEvt.Topics[0] {
 	case eventsAbi.Sync.Id: // EventSignature
 		values, err := eventsAbi.Sync.Arg.UnpackValues(logEvt.Data)
@@ -361,10 +293,10 @@ func (u *UniBroker) handleLog(eventsAbi *PairEventsAbi, logEvt types.Log) {
 		if err != nil {
 			log.Fatalln(err)
 		}
-		pair.reserve0 = reserve.Reserve0
-		pair.reserve1 = reserve.Reserve1
+		pair.Reserve0 = reserve.Reserve0
+		pair.Reserve1 = reserve.Reserve1
 		// log.Printf("ws_event Sync %s price %f\n", pair.name, pair.price())
-		u.bboCh <- pair.bbo()
+		u.bboCh <- pair.Bbo()
 	case eventsAbi.Swap.Id:
 		values, err := eventsAbi.Swap.Arg.UnpackValues(logEvt.Data)
 		if err != nil {
@@ -375,12 +307,12 @@ func (u *UniBroker) handleLog(eventsAbi *PairEventsAbi, logEvt types.Log) {
 		if err != nil {
 			log.Fatalln(err)
 		}
-		pair.reserve0.Sub(pair.reserve0, swap.Amount0Out)
-		pair.reserve0.Add(pair.reserve0, swap.Amount0In)
-		pair.reserve1.Sub(pair.reserve1, swap.Amount1Out)
-		pair.reserve1.Add(pair.reserve1, swap.Amount1In)
+		pair.Reserve0.Sub(pair.Reserve0, swap.Amount0Out)
+		pair.Reserve0.Add(pair.Reserve0, swap.Amount0In)
+		pair.Reserve1.Sub(pair.Reserve1, swap.Amount1Out)
+		pair.Reserve1.Add(pair.Reserve1, swap.Amount1In)
 		// log.Printf("ws_event Swap %s price %f\n", pair.name, pair.price())
-		u.bboCh <- pair.bbo()
+		u.bboCh <- pair.Bbo()
 	case eventsAbi.Burn.Id:
 		values, err := eventsAbi.Burn.Arg.UnpackValues(logEvt.Data)
 		if err != nil {
@@ -391,7 +323,7 @@ func (u *UniBroker) handleLog(eventsAbi *PairEventsAbi, logEvt types.Log) {
 		if err != nil {
 			log.Fatalln(err)
 		}
-		log.Printf("ws_event Burn %s Topics %v, data %#v price %f\n", pair.name, logEvt.Topics, data, pair.price())
+		log.Printf("ws_event Burn %s Topics %v, data %#v price %f\n", pair.Name, logEvt.Topics, data, pair.Price())
 	case eventsAbi.Mint.Id:
 		values, err := eventsAbi.Mint.Arg.UnpackValues(logEvt.Data)
 		if err != nil {
@@ -403,7 +335,7 @@ func (u *UniBroker) handleLog(eventsAbi *PairEventsAbi, logEvt types.Log) {
 			// 14:56:18.233005 main.go:497: abi: field value can't be found in the given value
 			log.Fatalln(err, logEvt.Data)
 		}
-		log.Printf("ws_event Mint %s Topics %v, data %#v price %f\n", pair.name, logEvt.Topics, data, pair.price())
+		log.Printf("ws_event Mint %s Topics %v, data %#v price %f\n", pair.Name, logEvt.Topics, data, pair.Price())
 	case eventsAbi.Transfer.Id:
 		values, err := eventsAbi.Transfer.Arg.UnpackValues(logEvt.Data)
 		if err != nil {
@@ -414,7 +346,7 @@ func (u *UniBroker) handleLog(eventsAbi *PairEventsAbi, logEvt types.Log) {
 		if err != nil {
 			log.Println(err)
 		}
-		log.Printf("ws_event Transfer %s Topics %v, data %#v price %f\n", pair.name, logEvt.Topics, data, pair.price())
+		log.Printf("ws_event Transfer %s Topics %v, data %#v price %f\n", pair.Name, logEvt.Topics, data, pair.Price())
 	}
 }
 
@@ -514,14 +446,14 @@ func (u *UniBroker) TransferEth(amountEther float64) error {
 - 任意的附加数据（calldata）在某些情况下用于 flash swaps。如果包含数据，则可能会触发更多复杂的操作，比如在执行完 swap 后立即调用接收者的合约以处理闪电贷逻辑
 */
 // side 买卖操作 针对的是 base currency
-func (u *UniBroker) Swap(pair *UniPair, side model.Side, amount float64) error {
+func (u *UniBroker) Swap(pair *config.UniPair, side model.Side, amount float64) error {
 	amount0Out := big.NewInt(0)
 	amount1Out := big.NewInt(0)
 	var baseCcyMul *big.Float
-	if pair.quoteIsToken1 {
-		baseCcyMul = new(big.Float).SetInt(pair.decimalsMul0)
+	if pair.QuoteIsToken1 {
+		baseCcyMul = new(big.Float).SetInt(pair.DecimalsMul0)
 	} else {
-		baseCcyMul = new(big.Float).SetInt(pair.decimalsMul1)
+		baseCcyMul = new(big.Float).SetInt(pair.DecimalsMul1)
 	}
 	baseCcyAmount, _ := new(big.Float).Mul(big.NewFloat(amount), baseCcyMul).Int(nil)
 	log.Println("amount", amount, "baseCcyMul", baseCcyMul, "baseCcyAmount", baseCcyAmount)
@@ -529,7 +461,7 @@ func (u *UniBroker) Swap(pair *UniPair, side model.Side, amount float64) error {
 		log.Fatalln("amount is zero")
 	}
 	if side == model.SideBuy {
-		if pair.quoteIsToken1 {
+		if pair.QuoteIsToken1 {
 			amount0Out = baseCcyAmount
 		} else {
 			amount1Out = baseCcyAmount
@@ -537,18 +469,18 @@ func (u *UniBroker) Swap(pair *UniPair, side model.Side, amount float64) error {
 	} else {
 		// https://ftmscan.com/tx/0xd429b9a74d35f6d8a1c3dcfc455843afaf675c31454d5b01d47a3e2e11b1e7d3
 		// 卖出 ETH 获得 USDC 的情况复杂点, 要用 x*y=k 公式算出可获得多少 USDC
-		k := new(big.Int).Mul(pair.reserve0, pair.reserve1)
-		if pair.quoteIsToken1 {
-			newBaseReserve := new(big.Int).Add(pair.reserve0, baseCcyAmount)
+		k := new(big.Int).Mul(pair.Reserve0, pair.Reserve1)
+		if pair.QuoteIsToken1 {
+			newBaseReserve := new(big.Int).Add(pair.Reserve0, baseCcyAmount)
 			newQuoteReserve := new(big.Int).Div(k, newBaseReserve)
-			log.Println(pair.reserve0, "*", pair.reserve1, "->", newBaseReserve, "*", newQuoteReserve)
-			SellQuoteAmount := new(big.Int).Sub(newQuoteReserve, pair.reserve1)
+			log.Println(pair.Reserve0, "*", pair.Reserve1, "->", newBaseReserve, "*", newQuoteReserve)
+			SellQuoteAmount := new(big.Int).Sub(newQuoteReserve, pair.Reserve1)
 			amount1Out = SellQuoteAmount
 		} else {
-			newBaseReserve := new(big.Int).Add(pair.reserve1, baseCcyAmount)
+			newBaseReserve := new(big.Int).Add(pair.Reserve1, baseCcyAmount)
 			newQuoteReserve := new(big.Int).Div(k, newBaseReserve)
-			log.Println(pair.reserve0, "*", pair.reserve1, "->", newQuoteReserve, "*", newBaseReserve)
-			SellQuoteAmount := new(big.Int).Sub(newQuoteReserve, pair.reserve0)
+			log.Println(pair.Reserve0, "*", pair.Reserve1, "->", newQuoteReserve, "*", newBaseReserve)
+			SellQuoteAmount := new(big.Int).Sub(newQuoteReserve, pair.Reserve0)
 			amount0Out = SellQuoteAmount
 		}
 	}
@@ -559,7 +491,7 @@ func (u *UniBroker) Swap(pair *UniPair, side model.Side, amount float64) error {
 	data := make([]byte, 4 + len(args))
 	copy(data, Swap.ID)
 	copy(data[4:], args)
-	tx := types.NewTransaction(u.nonce, pair.addr, big.NewInt(0), 8*gasLimit, u.gasPrice, data)
+	tx := types.NewTransaction(u.nonce, pair.Addr, big.NewInt(0), 8*gasLimit, u.gasPrice, data)
     signedTx, err := types.SignTx(tx, types.NewEIP155Signer(u.chainId), u.privKey)
 	if err != nil {
 		log.Fatalln(err)
@@ -574,40 +506,42 @@ func (u *UniBroker) Swap(pair *UniPair, side model.Side, amount float64) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("swap %s side=%d amount=%f amount0Out=%d amount0Out=%d %#v", pair.name, side, amount, amount0Out, amount1Out, receipt)
+	log.Printf("swap %s side=%d amount=%f amount0Out=%d amount0Out=%d %#v", pair.Name, side, amount, amount0Out, amount1Out, receipt)
 	if receipt.Status == types.ReceiptStatusFailed {
 		return errors.New("swap tx fail")
 	}
 	return err
 }
 
-func (u *UniBroker) BuyEth(pair *UniPair, amount float64) error {
+func (u *UniBroker) BuyEth(pair *config.UniPair, amount float64) error {
 	var baseCcyMul *big.Float
-	if pair.quoteIsToken1 {
-		baseCcyMul = new(big.Float).SetInt(pair.decimalsMul0)
+	if pair.QuoteIsToken1 {
+		baseCcyMul = new(big.Float).SetInt(pair.DecimalsMul0)
 	} else {
-		baseCcyMul = new(big.Float).SetInt(pair.decimalsMul1)
+		baseCcyMul = new(big.Float).SetInt(pair.DecimalsMul1)
 	}
 	baseCcyAmount, _ := new(big.Float).Mul(big.NewFloat(amount), baseCcyMul).Int(nil)	
-	k := new(big.Int).Mul(pair.reserve0, pair.reserve1)
+	k := new(big.Int).Mul(pair.Reserve0, pair.Reserve1)
 	// 计算最大滑点相关 必须设置滑点保护否则怕被MEV夹
 	var amountInMax *big.Int
-	if pair.quoteIsToken1 {
-		newBaseReserve := new(big.Int).Sub(pair.reserve0, baseCcyAmount)
+	if pair.QuoteIsToken1 {
+		newBaseReserve := new(big.Int).Sub(pair.Reserve0, baseCcyAmount)
 		newQuoteReserve := new(big.Int).Div(k, newBaseReserve)
 		//lint:ignore SA4006 not_used
-		amountInMax = new(big.Int).Sub(newQuoteReserve, pair.reserve1)
+		amountInMax = new(big.Int).Sub(newQuoteReserve, pair.Reserve1)
 	} else {
-		newBaseReserve := new(big.Int).Sub(pair.reserve1, baseCcyAmount)
+		newBaseReserve := new(big.Int).Sub(pair.Reserve1, baseCcyAmount)
 		newQuoteReserve := new(big.Int).Div(k, newBaseReserve)
 		//lint:ignore SA4006 not_used
-		amountInMax = new(big.Int).Sub(newQuoteReserve, pair.reserve0)
+		amountInMax = new(big.Int).Sub(newQuoteReserve, pair.Reserve0)
 	}
 	// 手续费 0.2% 滑点 0.1%
-	amountInMax = big.NewInt((int64)(pair.price() * amount * 1e6 * (1+0.002+0.001)))
+	fee := 0.0019
+	sliapge := 0.01
+	amountInMax = big.NewInt((int64)(pair.Price() * amount * 1e6 * (1+fee+sliapge)))
 	// amountInMax = big.NewInt(520000)
 
-	routerClient, err := bindings.NewUniswapV2RouterTransactor(routerAddr, u.client)
+	routerClient, err := bindings.NewUniswapV2RouterTransactor(common.HexToAddress("0x1E5675986fe386fF2Fef179C024F5C8875a96aE5"), u.client)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -625,11 +559,11 @@ func (u *UniBroker) BuyEth(pair *UniPair, amount float64) error {
 		GasLimit:  gasLimit * 10,
 	}
 	path := []common.Address {
-		pair.token0Addr,
-		pair.token1Addr,
+		pair.Token1Addr,
+		pair.Token0Addr,
 	}
 	deadline := big.NewInt(time.Now().Add(30 * time.Hour).Unix())
-	tx, err := routerClient.SwapTokensForExactETH(&opts, baseCcyAmount, amountInMax, path, u.addr, deadline)
+	tx, err := routerClient.SwapExactTokensForTokens(&opts, baseCcyAmount, amountInMax, path, u.addr, deadline)
 	if err != nil {
 		log.Println(err)
 		return err
@@ -649,24 +583,24 @@ func (u *UniBroker) BuyEth(pair *UniPair, amount float64) error {
 
 func (u *UniBroker) RouterSellEth() {
 	// if side == model.SideBuy {
-	// 	if pair.quoteIsToken1 {
-	// 		newBaseReserve := new(big.Int).Sub(pair.reserve0, baseCcyAmount)
+	// 	if pair.QuoteIsToken1 {
+	// 		newBaseReserve := new(big.Int).Sub(pair.Reserve0, baseCcyAmount)
 	// 		newQuoteReserve := new(big.Int).Div(k, newBaseReserve)
-	// 		amountInMax = new(big.Int).Sub(pair.reserve1, newQuoteReserve)
+	// 		amountInMax = new(big.Int).Sub(pair.Reserve1, newQuoteReserve)
 	// 	} else {
-	// 		newBaseReserve := new(big.Int).Sub(pair.reserve1, baseCcyAmount)
+	// 		newBaseReserve := new(big.Int).Sub(pair.Reserve1, baseCcyAmount)
 	// 		newQuoteReserve := new(big.Int).Div(k, newBaseReserve)
-	// 		amountInMax = new(big.Int).Sub(pair.reserve0, newQuoteReserve)
+	// 		amountInMax = new(big.Int).Sub(pair.Reserve0, newQuoteReserve)
 	// 	}
 	// } else {
-	// 	if pair.quoteIsToken1 {
-	// 		newBaseReserve := new(big.Int).Add(pair.reserve0, baseCcyAmount)
+	// 	if pair.QuoteIsToken1 {
+	// 		newBaseReserve := new(big.Int).Add(pair.Reserve0, baseCcyAmount)
 	// 		newQuoteReserve := new(big.Int).Div(k, newBaseReserve)
-	// 		amountInMax = new(big.Int).Sub(newQuoteReserve, pair.reserve1)
+	// 		amountInMax = new(big.Int).Sub(newQuoteReserve, pair.Reserve1)
 	// 	} else {
-	// 		newBaseReserve := new(big.Int).Add(pair.reserve1, baseCcyAmount)
+	// 		newBaseReserve := new(big.Int).Add(pair.Reserve1, baseCcyAmount)
 	// 		newQuoteReserve := new(big.Int).Div(k, newBaseReserve)
-	// 		amountInMax = new(big.Int).Sub(newQuoteReserve, pair.reserve0)
+	// 		amountInMax = new(big.Int).Sub(newQuoteReserve, pair.Reserve0)
 	// 	}	
 	// }	
 	panic("TODO swapExactETHForTokens")

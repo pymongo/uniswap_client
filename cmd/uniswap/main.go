@@ -13,10 +13,10 @@ func main() {
 	ch := make(chan model.Bbo, 128)
 	u := exchange.NewUniBroker(&conf, ch)
 	u.Mainloop()
-	u.DeployContract()
-	// err := u.BuyEth(exchange.Pairs[exchange.PairAddr], 1)
+	// u.DeployContract()
+	// err := u.BuyEth(exchange.Pairs[exchange.PairAddr], 0.01)
 	// if err != nil {
-		// log.Fatalln(err)
+	// 	log.Fatalln(err)
 	// }
 	for {
 		m := <- ch

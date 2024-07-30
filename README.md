@@ -35,6 +35,8 @@ abigen --abi exchange/bindings/erc20.abi --out exchange/bindings/erc20.go --type
 
 > solc --bin --abi --optimize -o exchange/bindings/ exchange/bindings/SwapHelper.sol
 
+> forge init --no-commit
+
 ## 为什么没用 go.work
 
 go.work 是用来管理 项目内有多个 go.mod 的子module的，也就是 monorepo
