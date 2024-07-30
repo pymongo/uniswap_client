@@ -1,0 +1,6 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+rpc_url = "https://rpcapi.fantom.network"
+# forge script script/DeploySwapHelper.s.sol:DeploySwapHelper --broadcast --rpc-url "https://rpcapi.fantom.network" --private-key 0xYOUR_PRIVATE_KEY

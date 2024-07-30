@@ -10,9 +10,12 @@ import (
 	"log"
 	"math"
 	"math/big"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -33,6 +36,7 @@ const (
 )
 var (
 	PairAddr = common.HexToAddress("0x084F933B6401a72291246B5B5eD46218a68773e6")
+	routerAddr = common.HexToAddress("0x5023882f4D1EC10544FCB2066abE9C1645E95AA0")
 	// wftmAddr = common.HexToAddress("0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83")
 	weiPerEther    = new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)
 	usdcDecimalMul = new(big.Int).Exp(big.NewInt(10), big.NewInt(6), nil)
@@ -489,6 +493,7 @@ func (u *UniBroker) TransferEth(amountEther float64) error {
 	if err != nil {
 		return err
 	}
+	u.nonce += 1
 	receipt, err := bind.WaitMined(context.Background(), u.client, signedTx)
 	if err != nil {
 		return err
@@ -497,7 +502,6 @@ func (u *UniBroker) TransferEth(amountEther float64) error {
 	if receipt.Status == types.ReceiptStatusFailed {
 		return errors.New("TransferEth tx fail")
 	}
-	u.nonce += 1
 	return err
 }
 
@@ -565,6 +569,7 @@ func (u *UniBroker) Swap(pair *UniPair, side model.Side, amount float64) error {
 	if err != nil {
 		return err
 	}
+	u.nonce += 1
 	receipt, err := bind.WaitMined(context.Background(), u.client, signedTx)
 	if err != nil {
 		return err
@@ -573,7 +578,6 @@ func (u *UniBroker) Swap(pair *UniPair, side model.Side, amount float64) error {
 	if receipt.Status == types.ReceiptStatusFailed {
 		return errors.New("swap tx fail")
 	}
-	u.nonce += 1
 	return err
 }
 
@@ -591,14 +595,19 @@ func (u *UniBroker) BuyEth(pair *UniPair, amount float64) error {
 	if pair.quoteIsToken1 {
 		newBaseReserve := new(big.Int).Sub(pair.reserve0, baseCcyAmount)
 		newQuoteReserve := new(big.Int).Div(k, newBaseReserve)
+		//lint:ignore SA4006 not_used
 		amountInMax = new(big.Int).Sub(newQuoteReserve, pair.reserve1)
 	} else {
 		newBaseReserve := new(big.Int).Sub(pair.reserve1, baseCcyAmount)
 		newQuoteReserve := new(big.Int).Div(k, newBaseReserve)
+		//lint:ignore SA4006 not_used
 		amountInMax = new(big.Int).Sub(newQuoteReserve, pair.reserve0)
 	}
+	// 手续费 0.2% 滑点 0.1%
+	amountInMax = big.NewInt((int64)(pair.price() * amount * 1e6 * (1+0.002+0.001)))
+	// amountInMax = big.NewInt(520000)
 
-	routerClient, err := bindings.NewUniswapV2RouterTransactor(pair.addr, u.client)
+	routerClient, err := bindings.NewUniswapV2RouterTransactor(routerAddr, u.client)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -613,28 +622,28 @@ func (u *UniBroker) BuyEth(pair *UniPair, amount float64) error {
 			return signedTx, nil
 		},
 		GasPrice:  u.gasPrice,
-		GasLimit:  gasLimit * 8,
+		GasLimit:  gasLimit * 10,
 	}
 	path := []common.Address {
 		pair.token0Addr,
 		pair.token1Addr,
 	}
-	deadline := big.NewInt(time.Now().Add(30 * time.Second).Unix())
+	deadline := big.NewInt(time.Now().Add(30 * time.Hour).Unix())
 	tx, err := routerClient.SwapTokensForExactETH(&opts, baseCcyAmount, amountInMax, path, u.addr, deadline)
 	if err != nil {
 		log.Println(err)
 		return err
 	}
+	u.nonce += 1 // 不管成功失败只要给过 Gas 费 nonce 就自增
 	receipt, err := bind.WaitMined(context.Background(), u.client, tx)
 	if err != nil {
 		log.Println(err)
 		return err
 	}
-	log.Println(baseCcyAmount, amountInMax, path, u.addr, deadline, receipt.TxHash)
+	log.Println(baseCcyAmount, amountInMax, path, u.addr, deadline, receipt.TxHash, receipt.Logs)
 	if receipt.Status == types.ReceiptStatusFailed {
 		return errors.New("swap tx fail")
 	}
-	u.nonce += 1
 	return nil
 }
 
@@ -661,4 +670,43 @@ func (u *UniBroker) RouterSellEth() {
 	// 	}	
 	// }	
 	panic("TODO swapExactETHForTokens")
+}
+
+func (u *UniBroker) DeployContract() {
+	// 加载合约的ABI
+	abiData, err := os.ReadFile("exchange/bindings/SwapHelper.abi")
+	if err != nil {
+		log.Fatalf("Failed to read ABI file: %v", err)
+	}
+	if len(abiData) > 0 {
+		panic("DeployContract would deploy fail please do not use")
+	}
+	parsedABI, err := abi.JSON(strings.NewReader(string(abiData)))
+	if err != nil {
+		log.Fatalf("Failed to parse contract ABI: %v", err)
+	}
+	// 获取合约部署的字节码
+	bytecode, err := os.ReadFile("exchange/bindings/SwapHelper.bin")
+	if err != nil {
+		log.Fatalf("Failed to read bytecode file: %v", err)
+	}
+	// 创建交易
+	opts, err := bind.NewKeyedTransactorWithChainID(u.privKey, u.chainId)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	opts.Nonce = big.NewInt((int64)(u.nonce))
+	opts.GasLimit = uint64(11000000)
+	opts.GasPrice = u.gasPrice
+	// 部署合约
+	address, tx, _, err := bind.DeployContract(opts, parsedABI, bytecode, u.client)
+	if err != nil {
+		log.Fatalf("Failed to deploy contract: %v", err)
+	}
+	u.nonce += 1 // 不管成功失败只要给过 Gas 费 nonce 就自增
+	addr, err := bind.WaitDeployed(context.Background(), u.client, tx)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	log.Println(address, addr)
 }
