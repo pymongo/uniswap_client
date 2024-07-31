@@ -29,7 +29,7 @@ func main() {
 	bn := exchange.NewBnBroker(conf.Key, conf.Secret, bnBboCh)
 	uni.Mainloop()
 	bn.Mainloop([]string{"ftmusdt"})
-	
+
 	// log.Printf("%#v\n", bn.Assets)
 
 	uniPrice := 0.
@@ -55,14 +55,14 @@ func main() {
 func onTick(uniPrice float64, bnPrice float64, uni *exchange.UniBroker, bn *exchange.BnBroker) {
 	spread := (bnPrice - uniPrice) / uniPrice
 	now := time.Now().UnixNano()
-	if now % 5 == 0 {
+	if now%5 == 0 {
 		log.Println("lead Uniswap", uniPrice, "lag Bn", bnPrice, "spread", spread)
-	}	
-	// if spread <= 0.0015 {
-	// 	return
-	// }
+	}
+	if spread <= 0.0055 {
+		return
+	}
 	log.Println("链上价格", uniPrice, "币安价格", bnPrice, "价差", spread)
-	if uni.Usdc < 6 { // || bn.Assets 
+	if uni.Usdc < 6 { // || bn.Assets
 		log.Fatalln("Uniswap not enough assets", uni.Usdc)
 	}
 	uniBeforeUsdc := uni.Usdc
@@ -76,7 +76,7 @@ func onTick(uniPrice float64, bnPrice float64, uni *exchange.UniBroker, bn *exch
 		if err != nil {
 			log.Fatalln(err)
 		}
-	}()	
+	}()
 	go func() {
 		defer wg.Done()
 		err := bn.PostMarginOrder(model.PostOrderParams{
@@ -93,13 +93,15 @@ func onTick(uniPrice float64, bnPrice float64, uni *exchange.UniBroker, bn *exch
 	log.Println("对冲下单完成!")
 	log.Println("等下次链上轮询余额")
 	time.Sleep(5 * time.Second)
-	log.Println("链上资产变化 ETH,USDC",uniBeforeEth,uniBeforeUsdc,"->",uni.Eth,uni.Usdc)
+	log.Println("链上资产变化 ETH,USDC", uniBeforeEth, uniBeforeUsdc, "->", uni.Eth, uni.Usdc)
 	err := uni.TransferEth(amount)
 	if err != nil {
 		log.Fatalln(err)
 	}
-	log.Println("等提币到币安到账")
-	time.Sleep(145 * time.Second)
+	log.Println("等充币到币安到账")
+	time.Sleep(45 * time.Second)
+	bn.Spot2Margin("FTM", amount) // 充币到现货后划转到杠杆账户
+	log.Println("币安现货->杠杆 划转成功")
 	log.Println("币安准备还债")
 	err = bn.Repay("FTM", amount)
 	if err != nil {

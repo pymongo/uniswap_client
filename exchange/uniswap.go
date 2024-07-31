@@ -8,7 +8,6 @@ import (
 	"crypto/ecdsa"
 	"errors"
 	"log"
-	"math"
 	"math/big"
 	"os"
 	"strings"
@@ -465,7 +464,7 @@ func (u *UniBroker) queryBalanceGasPrice() error {
 
 func (u *UniBroker) TransferEth(amountEther float64) error {
 	to := u.conf.DepositAddr
-	amountWei := new(big.Int).SetInt64(int64(math.Floor(amountEther * 1e18)))
+	amountWei, _ := new(big.Float).Mul(big.NewFloat(amountEther), big.NewFloat(1e18)).Int(nil)
 	tx := types.NewTransaction(u.nonce, to, amountWei, gasLimit, u.gasPrice, nil)
 	signedTx, err := types.SignTx(tx, types.NewEIP155Signer(u.chainId), u.privKey)
 	if err != nil {
