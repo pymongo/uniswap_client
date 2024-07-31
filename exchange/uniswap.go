@@ -110,9 +110,12 @@ func NewUniBroker(conf *config.Config, bboCh chan model.Bbo) UniBroker {
 }
 
 func (u *UniBroker) Mainloop() {
+	if len(u.conf.Pairs) == 0 {
+		log.Fatalln("no pair")
+	}
 	err := u.queryReserves()
 	if err != nil {
-		log.Fatalln(err)
+		log.Fatalln(u.conf.RpcUrl, err)
 	}
 	err = u.queryBalanceGasPrice()
 	if err != nil {
@@ -178,7 +181,7 @@ func (u *UniBroker) Mainloop() {
 	log.Printf("%s wallet %fUSDC %fETH", u.addr, u.Usdc, u.Eth)
 	go func() {
 		for {
-			time.Sleep(250 * time.Microsecond)
+			time.Sleep(300 * time.Microsecond)
 			err = u.queryReserves()
 			if err != nil {
 				log.Println("err", err)
@@ -506,12 +509,14 @@ func (u *UniBroker) Swap(pairIdx int, side model.Side, amount float64) error {
 	}
 	baseCcyAmount, _ := new(big.Float).Mul(big.NewFloat(amount), baseCcyMul).Int(nil)
 	log.Println("amount", amount, "baseCcyMul", baseCcyMul, "baseCcyAmount", baseCcyAmount)
+	var value *big.Int
 	if side == model.SideBuy {
 		if pair.QuoteIsToken1 {
 			amount0Out = baseCcyAmount
 		} else {
 			amount1Out = baseCcyAmount
 		}
+		value = big.NewInt(0)
 	} else {
 		// 卖出 ETH 获得 USDC 的情况复杂点, 要用 x*y=k 公式算出可获得多少 USDC
 		k := new(big.Int).Mul(pair.Reserve0, pair.Reserve1)
@@ -519,15 +524,16 @@ func (u *UniBroker) Swap(pairIdx int, side model.Side, amount float64) error {
 			newBaseReserve := new(big.Int).Add(pair.Reserve0, baseCcyAmount)
 			newQuoteReserve := new(big.Int).Div(k, newBaseReserve)
 			log.Println(pair.Reserve0, "*", pair.Reserve1, "->", newBaseReserve, "*", newQuoteReserve)
-			SellQuoteAmount := new(big.Int).Sub(newQuoteReserve, pair.Reserve1)
+			SellQuoteAmount := new(big.Int).Sub(pair.Reserve1, newQuoteReserve)
 			amount1Out = SellQuoteAmount
 		} else {
 			newBaseReserve := new(big.Int).Add(pair.Reserve1, baseCcyAmount)
 			newQuoteReserve := new(big.Int).Div(k, newBaseReserve)
 			log.Println(pair.Reserve0, "*", pair.Reserve1, "->", newQuoteReserve, "*", newBaseReserve)
-			SellQuoteAmount := new(big.Int).Sub(newQuoteReserve, pair.Reserve0)
+			SellQuoteAmount := new(big.Int).Sub(pair.Reserve0, newQuoteReserve)
 			amount0Out = SellQuoteAmount
 		}
+		value = baseCcyAmount
 	}
 	args, err := Swap.Inputs.Pack(amount0Out, amount1Out, u.addr, []byte{})
 	if err != nil {
@@ -536,7 +542,7 @@ func (u *UniBroker) Swap(pairIdx int, side model.Side, amount float64) error {
 	data := make([]byte, 4+len(args))
 	copy(data, Swap.ID)
 	copy(data[4:], args)
-	tx := types.NewTransaction(u.nonce, pair.Addr, big.NewInt(0), 8*gasLimit, u.gasPrice, data)
+	tx := types.NewTransaction(u.nonce, pair.Addr, value, 8*gasLimit, u.gasPrice, data)
 	signedTx, err := types.SignTx(tx, types.NewEIP155Signer(u.chainId), u.privKey)
 	if err != nil {
 		log.Fatalln(err)
@@ -627,29 +633,68 @@ func (u *UniBroker) BuyEth(pairIdx int, amount float64) error {
 	return nil
 }
 
-func (u *UniBroker) RouterSellEth() {
-	// if side == model.SideBuy {
-	// 	if pair.QuoteIsToken1 {
-	// 		newBaseReserve := new(big.Int).Sub(pair.Reserve0, baseCcyAmount)
-	// 		newQuoteReserve := new(big.Int).Div(k, newBaseReserve)
-	// 		amountInMax = new(big.Int).Sub(pair.Reserve1, newQuoteReserve)
-	// 	} else {
-	// 		newBaseReserve := new(big.Int).Sub(pair.Reserve1, baseCcyAmount)
-	// 		newQuoteReserve := new(big.Int).Div(k, newBaseReserve)
-	// 		amountInMax = new(big.Int).Sub(pair.Reserve0, newQuoteReserve)
-	// 	}
+func (u *UniBroker) SellEth(pairIdx int, amount float64) error {
+	pair := &u.conf.Pairs[0]
+	var baseCcyMul *big.Float
+	if pair.QuoteIsToken1 {
+		baseCcyMul = big.NewFloat(pair.DecimalsMul0)
+	} else {
+		baseCcyMul = big.NewFloat(pair.DecimalsMul1)
+	}
+	baseCcyAmount, _ := new(big.Float).Mul(big.NewFloat(amount), baseCcyMul).Int(nil)
+	// k := new(big.Int).Mul(pair.Reserve0, pair.Reserve1)
+	// if pair.QuoteIsToken1 {
+	// 	newBaseReserve := new(big.Int).Add(pair.Reserve0, baseCcyAmount)
+	// 	newQuoteReserve := new(big.Int).Div(k, newBaseReserve)
+	// 	amountInMax = new(big.Int).Sub(newQuoteReserve, pair.Reserve1)
 	// } else {
-	// 	if pair.QuoteIsToken1 {
-	// 		newBaseReserve := new(big.Int).Add(pair.Reserve0, baseCcyAmount)
-	// 		newQuoteReserve := new(big.Int).Div(k, newBaseReserve)
-	// 		amountInMax = new(big.Int).Sub(newQuoteReserve, pair.Reserve1)
-	// 	} else {
-	// 		newBaseReserve := new(big.Int).Add(pair.Reserve1, baseCcyAmount)
-	// 		newQuoteReserve := new(big.Int).Div(k, newBaseReserve)
-	// 		amountInMax = new(big.Int).Sub(newQuoteReserve, pair.Reserve0)
-	// 	}
+	// 	newBaseReserve := new(big.Int).Add(pair.Reserve1, baseCcyAmount)
+	// 	newQuoteReserve := new(big.Int).Div(k, newBaseReserve)
+	// 	amountInMax = new(big.Int).Sub(newQuoteReserve, pair.Reserve0)
 	// }
-	panic("TODO swapExactETHForTokens")
+	fee := 0.0019
+	sliapge := 0.0005
+	amountOutMin := big.NewInt((int64)(pair.Price() * amount * 1e6 * (1 - fee - sliapge)))
+	routerClient, err := bindings.NewUniswapV2RouterTransactor(u.conf.RouterAddr, u.client)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	opts := bind.TransactOpts{
+		From:  u.addr,
+		Nonce: big.NewInt((int64)(u.nonce)),
+		Signer: func(a common.Address, tx *types.Transaction) (*types.Transaction, error) {
+			signedTx, err := types.SignTx(tx, types.NewEIP155Signer(u.chainId), u.privKey)
+			if err != nil {
+				log.Fatalln(err)
+			}
+			return signedTx, nil
+		},
+		Value: baseCcyAmount,
+		GasPrice: u.gasPrice,
+		GasLimit: gasLimit * 10,
+	}
+	// path[0] 是支付的币种 path[1] 是获得的币种
+	path := []common.Address{
+		pair.Token1Addr,
+		pair.Token0Addr,
+	}
+	deadline := big.NewInt(time.Now().Add(30 * time.Second).Unix())
+	tx, err := routerClient.SwapExactETHForTokens(&opts, amountOutMin, path, u.addr, deadline)	
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+	u.nonce += 1 // 不管成功失败只要给过 Gas 费 nonce 就自增
+	receipt, err := bind.WaitMined(context.Background(), u.client, tx)
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+	log.Println(baseCcyAmount, amountOutMin, path, u.addr, deadline, "txhash", receipt.TxHash, "logs", receipt.Logs)
+	if receipt.Status == types.ReceiptStatusFailed {
+		return errors.New("SwapTokensForExactETH tx fail")
+	}
+	return nil
 }
 
 func (u *UniBroker) DeployContract() {
