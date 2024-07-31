@@ -590,7 +590,7 @@ func (u *UniBroker) BuyEth(pairIdx int, amount float64) error {
 		amountInMax = new(big.Int).Sub(newQuoteReserve, pair.Reserve0)
 	}
 	fee := 0.0019
-	sliapge := 0.0005
+	sliapge := 0.0008
 	amountInMax = big.NewInt((int64)(pair.Price() * amount * 1e6 * (1 + fee + sliapge)))
 
 	routerClient, err := bindings.NewUniswapV2RouterTransactor(u.conf.RouterAddr, u.client)

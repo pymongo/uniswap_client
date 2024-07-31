@@ -5,7 +5,6 @@ import (
 	"arbitrage/exchange"
 	"arbitrage/model"
 	"log"
-	"sync"
 
 	"time"
 )
@@ -55,19 +54,35 @@ func main() {
 func onTick(uniPrice float64, bnPrice float64, uni *exchange.UniBroker, bn *exchange.BnBroker) {
 	spread := (bnPrice - uniPrice) / uniPrice
 	now := time.Now().UnixNano()
-	if now%5 == 0 {
+	if now%17 == 0 {
 		log.Println("lead Uniswap", uniPrice, "lag Bn", bnPrice, "spread", spread)
 	}
-	if spread <= 0.0055 {
+	if spread <= 0.0053 {
 		return
 	}
-	log.Println("链上价格", uniPrice, "币安价格", bnPrice, "价差", spread)
+	log.Println("链上价格", uniPrice, "币安价格", bnPrice, "价差%", spread*100)
 	if uni.Usdc < 6 { // || bn.Assets
 		log.Fatalln("Uniswap not enough assets", uni.Usdc)
 	}
 	uniBeforeUsdc := uni.Usdc
 	uniBeforeEth := uni.Eth
 	amount := 12.0
+	err := uni.BuyEth(0, amount)
+	if err != nil {
+		log.Println("Uniswap 下单失败", err)
+		return
+	}
+	log.Println("Uniswap下单成功")
+	err = bn.PostMarginOrder(model.PostOrderParams{
+		Symbol: "FTMUSDT",
+		Side:   model.SideSell,
+		Amount: amount,
+		Tif:    model.TifMarket,
+	})
+	if err != nil {
+		log.Fatalln(err)
+	}
+	/*
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
@@ -90,11 +105,12 @@ func onTick(uniPrice float64, bnPrice float64, uni *exchange.UniBroker, bn *exch
 		}
 	}()
 	wg.Wait()
-	log.Println("对冲下单完成!")
+	*/
+	log.Println("币安对冲下单完成!")
 	log.Println("等下次链上轮询余额")
 	time.Sleep(5 * time.Second)
 	log.Println("链上资产变化 ETH,USDC", uniBeforeEth, uniBeforeUsdc, "->", uni.Eth, uni.Usdc)
-	err := uni.TransferEth(amount)
+	err = uni.TransferEth(amount)
 	if err != nil {
 		log.Fatalln(err)
 	}
