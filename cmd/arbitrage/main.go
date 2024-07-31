@@ -69,6 +69,7 @@ func onTick(uniPrice float64, bnPrice float64, uni *exchange.UniBroker, bn *exch
 	uniBeforeEth := uni.Eth
 	amount := 12.0
 	var wg sync.WaitGroup
+	wg.Add(2)
 	go func() {
 		defer wg.Done()
 		err := uni.BuyEth(0, amount)

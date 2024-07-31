@@ -474,11 +474,13 @@ func (u *UniBroker) TransferEth(amountEther float64) error {
 	// txhash := signedTx.Hash().Hex()
 	err = u.client.SendTransaction(context.Background(), signedTx)
 	if err != nil {
+		log.Println(amountEther, err)
 		return err
 	}
 	u.nonce += 1
 	receipt, err := bind.WaitMined(context.Background(), u.client, signedTx)
 	if err != nil {
+		log.Println(amountEther, err)
 		return err
 	}
 	log.Printf("transfer %f to %s receipt %#v", amountEther, to, receipt)

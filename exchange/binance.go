@@ -164,7 +164,8 @@ func (bn *BnBroker) PostMarginOrder(p model.PostOrderParams) error {
 		}
 	} else {
 		params["type"] = "MARKET"
-		params["timeInForce"] = "IOC"
+		// Parameter 'timeInForce' sent when not required
+		// params["timeInForce"] = "IOC"
 	}
 	// IOC 没成交返回 {"symbol":"FTMUSDT","orderId":3432590431,"clientOrderId":"U3vAoKlfhxWPDENJLH58vI","transactTime":1721963358518,"price":"0.5","origQty":"10","executedQty":"0","cummulativeQuoteQty":"0","status":"EXPIRED","timeInForce":"IOC","type":"LIMIT","side":"SELL","fills":[],"marginBuyBorrowAsset":"FTM","marginBuyBorrowAmount":"10","isIsolated":false,"selfTradePreventionMode":"EXPIRE_MAKER"}
 	var r json.RawMessage
@@ -435,4 +436,21 @@ func (bn *BnBroker) publicWsMainLoop(symbols []string) error {
 func (bn *BnBroker) lastPrice(symbol string) {
 	// if no symbol params prices for all symbols will be returned in an array
 	// bn.req("GET", "/api/v3/ticker/price")
+}
+
+func (bn *BnBroker)transfer(type_, asset string, amount float64) {
+	params := map[string]string {
+		"type": type_,
+		"asset": asset,
+		"amount": strconv.FormatFloat(amount, 'f', -1, 64),
+	}
+	var r json.RawMessage
+	err := bn.req("POST", "/sapi/v1/asset/transfer", params, nil, true, &r)
+	if err != nil {
+		log.Fatalln(err)
+	}
+}
+
+func (bn *BnBroker)Spot2Margin(asset string, amount float64) {
+	bn.transfer("MAIN_MARGIN", asset, amount)
 }
